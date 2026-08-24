@@ -340,7 +340,7 @@ func TestSessionContextForKey_SharedBinding(t *testing.T) {
 	if sessions == e.sessions {
 		t.Fatal("expected workspace session manager, got base session manager")
 	}
-	if got := e.workspacePool.Get(normalizeWorkspacePath(wsDir)); got == nil || got.agent == nil || got.sessions == nil {
+	if got := e.workspacePool.Get(normalizeWorkspacePath(wsDir)); got == nil || got.agents[""] == nil || got.sessions[""] == nil {
 		t.Fatal("expected workspace pool entry to be created for shared binding")
 	}
 }

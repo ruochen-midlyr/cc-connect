@@ -25,10 +25,18 @@ func normalizeWorkspacePath(path string) string {
 
 // workspaceState holds the runtime state for a single workspace.
 type workspaceState struct {
-	mu           sync.Mutex
-	workspace    string
-	sessions     *SessionManager
-	agent        Agent
+	mu        sync.Mutex
+	workspace string
+	// agents and sessions are keyed by agent profile name, with "" for the
+	// project default. One workspace can be driven by more than one agent —
+	// a thread running Claude Code and another running Codex on the same
+	// repository — and each needs its own process and session store.
+	//
+	// Keying the pool itself by (workspace, profile) would be simpler but
+	// breaks idle reaping, which reports pool keys and matches them against
+	// the workspace directory recorded on interactive states.
+	agents       map[string]Agent
+	sessions     map[string]*SessionManager
 	lastActivity time.Time
 	activeTurns  int
 }
@@ -36,6 +44,8 @@ type workspaceState struct {
 func newWorkspaceState(workspace string) *workspaceState {
 	return &workspaceState{
 		workspace:    workspace,
+		agents:       make(map[string]Agent),
+		sessions:     make(map[string]*SessionManager),
 		lastActivity: time.Now(),
 	}
 }

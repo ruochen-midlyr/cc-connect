@@ -46,6 +46,11 @@ type WorkspaceBinding struct {
 	ChannelName string   `json:"channel_name"`
 	Workspace   string   `json:"workspace"`
 	BoundAt     FlexTime `json:"bound_at"`
+	// AgentProfile names the [[agent_profiles]] entry this chat runs, letting
+	// two threads on one repository use different agents. Empty means the
+	// project's default agent. It lives on the binding so the choice is scoped
+	// exactly like the workspace it applies to.
+	AgentProfile string `json:"agent_profile,omitempty"`
 }
 
 // WorkspaceBindingManager persists channel->workspace mappings.
@@ -113,6 +118,34 @@ func (m *WorkspaceBindingManager) Bind(projectKey, channelKey, channelName, work
 		BoundAt:     FlexTime{time.Now()},
 	}
 	m.saveLocked()
+}
+
+// SetAgentProfile records which agent profile a bound chat runs. It reports
+// false when the chat has no binding yet: the profile is stored on the binding,
+// so there is nowhere to put it until a workspace is chosen.
+func (m *WorkspaceBindingManager) SetAgentProfile(projectKey, channelKey, profile string) bool {
+	if projectKey == "" || channelKey == "" {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.refreshLocked()
+
+	b := m.lookupLocked(projectKey, channelKey)
+	if b == nil {
+		return false
+	}
+	// A binding reached through a broader candidate key belongs to that broader
+	// scope. Write a copy at the exact key instead, so setting an agent in one
+	// thread cannot change every other chat sharing the inherited binding.
+	if m.bindings[projectKey][channelKey] == nil {
+		scoped := *b
+		m.bindings[projectKey][channelKey] = &scoped
+		b = m.bindings[projectKey][channelKey]
+	}
+	b.AgentProfile = profile
+	m.saveLocked()
+	return true
 }
 
 // MigrateChannelKey copies an existing default binding from oldChannelKey to

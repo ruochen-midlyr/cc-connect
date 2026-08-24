@@ -684,6 +684,53 @@ level = "info" # debug, info, warn, error
 #
 
 # =============================================================================
+# Agent Profiles / 命名 Agent 配置
+# =============================================================================
+# Named agent setups a chat switches to with `/workspace set-agent <name>`, so
+# one thread can run Claude Code and another Codex on the same repository.
+# 命名的 agent 配置，聊天中用 `/workspace set-agent <名称>` 切换，
+# 于是同一个仓库上可以一个话题跑 Claude Code、另一个跑 Codex。
+#
+# The choice is stored on the workspace binding, so it is scoped exactly like
+# the workspace: per channel, or per thread when session_scope = "thread".
+# Each profile gets its own agent process and session store, and switching
+# takes effect on the next message.
+# 该选择保存在工作区绑定上，作用域与工作区一致：按频道，或在 session_scope =
+# "thread" 时按话题。每个配置有独立的 agent 进程和会话存储，切换后下一条消息生效。
+#
+# [[agent_profiles]]
+# name = "cc"                       # what users type / 用户输入的名称
+# type = "claudecode"               # empty keeps the project's agent type / 留空则沿用项目的 agent 类型
+# [agent_profiles.options]
+# mode = "bypassPermissions"
+# cmd = "/Users/me/.local/bin/claude"
+#
+# [[agent_profiles]]
+# name = "cdx"
+# type = "codex"
+# [agent_profiles.options]
+# mode = "yolo"                     # suggest | auto-edit | full-auto | yolo
+# cmd = "/opt/homebrew/bin/codex"
+#
+# # Same CLI, different endpoint: type is omitted, so only options change.
+# # 同一个 CLI、不同端点：省略 type，只改选项。
+# [[agent_profiles]]
+# name = "ccor"
+# [agent_profiles.options]
+# cmd = "/Users/me/cliproxyapi/claude-azure.sh"
+# [agent_profiles.options.env]
+# AZ_MODEL = "ox-alpha-or"
+#
+# Usage / 用法:
+#   /workspace bind my-repo         # bind a workspace first / 先绑定工作区
+#   /workspace set-agent cdx        # then choose the agent / 再选择 agent
+#   /workspace set-agent default    # back to the project's agent / 回到项目默认 agent
+#
+# Note: a profile that changes `type` starts from a clean option set, because
+# permission modes and model names do not carry across different CLIs.
+# 注意：修改了 type 的配置会从空白选项开始，因为权限模式和模型名在不同 CLI 之间不通用。
+
+# =============================================================================
 # Shared Platforms / 共享平台连接
 # =============================================================================
 # One bot connection serving several projects, with the channel deciding which

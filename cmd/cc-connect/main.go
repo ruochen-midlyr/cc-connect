@@ -433,6 +433,15 @@ func main() {
 
 		engine := core.NewEngine(proj.Name, agent, platforms, sessionFile, lang)
 
+		// Named agent setups a chat can switch to with /workspace set-agent.
+		if len(cfg.AgentProfiles) > 0 {
+			profiles := make([]core.AgentProfile, 0, len(cfg.AgentProfiles))
+			for _, ap := range cfg.AgentProfiles {
+				profiles = append(profiles, core.AgentProfile{Name: ap.Name, Type: ap.Type, Options: ap.Options})
+			}
+			engine.SetAgentProfiles(profiles)
+		}
+
 		// Attach a shared connection, if this project receives from one, and
 		// claim the channels it answers in.
 		if ref := strings.TrimSpace(proj.PlatformRef); ref != "" {

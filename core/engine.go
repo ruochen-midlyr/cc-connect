@@ -360,7 +360,10 @@ type Engine struct {
 	platforms []Platform
 	// sharedPlatforms marks entries of platforms that another owner starts and
 	// stops. See AttachSharedPlatform.
-	sharedPlatforms       map[Platform]bool
+	sharedPlatforms map[Platform]bool
+	// agentProfiles are named agent setups a chat can switch to at runtime,
+	// keyed by lowercased name. See SetAgentProfiles.
+	agentProfiles         map[string]AgentProfile
 	sessions              *SessionManager
 	ctx                   context.Context
 	cancel                context.CancelFunc
@@ -1092,6 +1095,78 @@ func (e *Engine) SetModelSaveFunc(fn func(model string) error) {
 // or if the engine is already running, it is started immediately.
 func (e *Engine) AddPlatform(p Platform) {
 	e.platforms = append(e.platforms, p)
+}
+
+// AgentProfile is a named agent setup a chat can switch to at runtime.
+// Type empty means "keep the project's agent type and only apply Options",
+// which is how one CLI is pointed at a different model or endpoint.
+type AgentProfile struct {
+	Name    string
+	Type    string
+	Options map[string]any
+}
+
+// SetAgentProfiles installs the named agent setups chats may select. Names are
+// matched case-insensitively.
+func (e *Engine) SetAgentProfiles(profiles []AgentProfile) {
+	if len(profiles) == 0 {
+		e.agentProfiles = nil
+		return
+	}
+	m := make(map[string]AgentProfile, len(profiles))
+	for _, pr := range profiles {
+		name := strings.ToLower(strings.TrimSpace(pr.Name))
+		if name == "" {
+			continue
+		}
+		pr.Name = name
+		m[name] = pr
+	}
+	e.agentProfiles = m
+}
+
+// AgentProfileNames lists the configured profile names, sorted, for help text
+// and error messages.
+func (e *Engine) AgentProfileNames() []string {
+	if len(e.agentProfiles) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(e.agentProfiles))
+	for name := range e.agentProfiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// boundAgentProfile returns the agent profile a chat selected, or "" for the
+// project default. An unknown name — a profile deleted from config since it was
+// bound — falls back to the default rather than failing the turn.
+func (e *Engine) boundAgentProfile(channelKey string) string {
+	if e.workspaceBindings == nil || channelKey == "" {
+		return ""
+	}
+	b, _, usable := e.lookupEffectiveWorkspaceBinding(channelKey)
+	if b == nil || !usable || b.AgentProfile == "" {
+		return ""
+	}
+	if _, known := e.lookupAgentProfile(b.AgentProfile); !known {
+		slog.Warn("bound agent profile is no longer configured, using project default",
+			"project", e.name, "profile", b.AgentProfile)
+		return ""
+	}
+	return b.AgentProfile
+}
+
+// lookupAgentProfile resolves a profile name, reporting whether it is known.
+// An empty name resolves to the project default and is always valid.
+func (e *Engine) lookupAgentProfile(name string) (AgentProfile, bool) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return AgentProfile{}, true
+	}
+	pr, ok := e.agentProfiles[name]
+	return pr, ok
 }
 
 // AttachSharedPlatform registers a platform that this engine sends through but
@@ -3008,7 +3083,8 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 			}
 
 			var effectiveWorkspace string
-			wsAgent, wsSessions, _, effectiveWorkspace, err = e.workspaceContext(workspace, msg.SessionKey)
+			wsAgent, wsSessions, _, effectiveWorkspace, err = e.workspaceContextFor(
+				workspace, msg.SessionKey, e.boundAgentProfile(channelKey))
 			if err != nil {
 				slog.Error("failed to create workspace agent", "workspace", workspace, "err", err)
 				e.reply(p, msg.ReplyCtx, fmt.Sprintf("Failed to initialize workspace: %v", err))
@@ -3945,6 +4021,22 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 // getOrCreateWorkspaceAgent returns (or creates) a per-workspace agent and session manager.
 // workspace must be a normalized path (from resolveWorkspace or normalizeWorkspacePath).
 func (e *Engine) getOrCreateWorkspaceAgent(workspace string) (Agent, *SessionManager, error) {
+	return e.getOrCreateWorkspaceAgentFor(workspace, "")
+}
+
+// getOrCreateWorkspaceAgentFor returns the pooled agent for a workspace running
+// under a named agent profile, creating it on first use.
+//
+// The pool is keyed by workspace and profile together: two threads on one
+// repository running different agents are different processes with different
+// session stores, so collapsing them onto the workspace alone would hand a
+// thread the other's agent.
+func (e *Engine) getOrCreateWorkspaceAgentFor(workspace, profile string) (Agent, *SessionManager, error) {
+	prof, known := e.lookupAgentProfile(profile)
+	if !known {
+		return nil, nil, fmt.Errorf("unknown agent profile %q", profile)
+	}
+
 	e.interactiveMu.Lock()
 	if e.workspacePool == nil {
 		e.workspacePool = newWorkspacePool(DefaultWorkspaceIdleTimeout)
@@ -3956,8 +4048,8 @@ func (e *Engine) getOrCreateWorkspaceAgent(workspace string) (Agent, *SessionMan
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 
-	if ws.agent != nil {
-		return ws.agent, ws.sessions, nil
+	if a := ws.agents[prof.Name]; a != nil {
+		return a, ws.sessions[prof.Name], nil
 	}
 
 	// Create a new agent instance with this workspace's work_dir
@@ -4013,29 +4105,56 @@ func (e *Engine) getOrCreateWorkspaceAgent(workspace string) (Agent, *SessionMan
 		}
 	}
 
-	agent, err := CreateAgent(e.agent.Name(), opts)
+	// A profile's options come last so they beat anything inherited from the
+	// project agent. Its type switches the implementation outright, in which
+	// case options copied from a different agent are dropped: permission modes
+	// and model names are not portable across CLIs, and passing Claude Code's
+	// "bypassPermissions" to Codex would silently degrade to its default.
+	agentType := e.agent.Name()
+	if prof.Name != "" {
+		if prof.Type != "" && prof.Type != agentType {
+			agentType = prof.Type
+			opts = map[string]any{"work_dir": workspace}
+		}
+		for k, v := range prof.Options {
+			opts[k] = v
+		}
+		opts["work_dir"] = workspace
+	}
+
+	agent, err := CreateAgent(agentType, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create workspace agent for %s: %w", workspace, err)
 	}
 
-	// Wire providers if original agent has them
-	if ps, ok := e.agent.(ProviderSwitcher); ok {
-		if ps2, ok2 := agent.(ProviderSwitcher); ok2 {
-			ps2.SetProviders(ps.ListProviders())
-			if active := ps.GetActiveProvider(); active != nil && active.Name != "" {
-				ps2.SetActiveProvider(active.Name)
+	// Wire providers if the original agent has them and the profile did not
+	// switch to a different implementation, whose provider list would differ.
+	if agentType == e.agent.Name() {
+		if ps, ok := e.agent.(ProviderSwitcher); ok {
+			if ps2, ok2 := agent.(ProviderSwitcher); ok2 {
+				ps2.SetProviders(ps.ListProviders())
+				if active := ps.GetActiveProvider(); active != nil && active.Name != "" {
+					ps2.SetActiveProvider(active.Name)
+				}
 			}
 		}
 	}
 
-	// Create per-workspace session manager
-	h := sha256.Sum256([]byte(workspace))
+	// Create a per-workspace session manager, separate per profile so two
+	// agents on one workspace cannot resume into each other's sessions. The
+	// default profile keeps hashing the bare path so existing session files
+	// stay addressable.
+	sessionSeed := workspace
+	if prof.Name != "" {
+		sessionSeed = workspace + "\x00" + prof.Name
+	}
+	h := sha256.Sum256([]byte(sessionSeed))
 	sessionFile := filepath.Join(filepath.Dir(e.sessions.StorePath()),
 		fmt.Sprintf("%s_ws_%s.json", e.name, hex.EncodeToString(h[:4])))
 	sessions := NewSessionManager(sessionFile)
 
-	ws.agent = agent
-	ws.sessions = sessions
+	ws.agents[prof.Name] = agent
+	ws.sessions[prof.Name] = sessions
 	return agent, sessions, nil
 }
 
@@ -4056,9 +4175,15 @@ func (e *Engine) resolveChannelWorkDir(workspace, interactiveKey string) string 
 }
 
 func (e *Engine) workspaceContext(workspace, sessionKey string) (Agent, *SessionManager, string, string, error) {
+	return e.workspaceContextFor(workspace, sessionKey, "")
+}
+
+// workspaceContextFor resolves the agent and sessions for a workspace under a
+// named agent profile. An empty profile uses the project's default agent.
+func (e *Engine) workspaceContextFor(workspace, sessionKey, profile string) (Agent, *SessionManager, string, string, error) {
 	interactiveKey := workspace + ":" + sessionKey
 	effectiveDir := e.resolveChannelWorkDir(workspace, interactiveKey)
-	wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgent(effectiveDir)
+	wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgentFor(effectiveDir, profile)
 	if err != nil {
 		return nil, nil, "", "", err
 	}
@@ -7007,7 +7132,7 @@ func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string)
 
 	subCmd := ""
 	if len(args) > 0 {
-		subCmd = matchSubCommand(args[0], []string{"init", "bind", "route", "unbind", "list", "shared"})
+		subCmd = matchSubCommand(args[0], []string{"init", "bind", "route", "unbind", "list", "shared", "set-agent"})
 	}
 
 	switch subCmd {
@@ -7032,6 +7157,38 @@ func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string)
 			return
 		}
 		routeWorkspace(projectKey, args[1:], MsgWsRouteUsage, MsgWsRouteSuccess)
+
+	case "set-agent":
+		names := e.AgentProfileNames()
+		if len(names) == 0 {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsAgentNoProfiles))
+			return
+		}
+		if len(args) < 2 {
+			e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsAgentUsage, strings.Join(names, ", ")))
+			return
+		}
+		wanted := strings.ToLower(strings.TrimSpace(args[1]))
+		// "default" is the escape hatch back to the project's own agent; it is
+		// spelled out rather than left as an empty argument so the intent is
+		// visible in the chat log.
+		if wanted != "default" {
+			if _, known := e.lookupAgentProfile(wanted); !known || wanted == "" {
+				e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsAgentUnknown, args[1], strings.Join(names, ", ")))
+				return
+			}
+		} else {
+			wanted = ""
+		}
+		if !e.workspaceBindings.SetAgentProfile(projectKey, channelKey, wanted) {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsAgentNeedsBinding))
+			return
+		}
+		if wanted == "" {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsAgentResetSuccess))
+		} else {
+			e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsAgentSetSuccess, wanted))
+		}
 
 	case "init":
 		if len(args) < 2 {

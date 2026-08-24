@@ -532,8 +532,8 @@ func TestHandleRelay_MultiWorkspaceRoutesBySourceSessionKey(t *testing.T) {
 	normalizedWsDir := normalizeWorkspacePath(wsDir)
 	workspaceAgent := &sessionEnvRecordingAgent{session: newResultAgentSession("workspace")}
 	ws := e.workspacePool.GetOrCreate(normalizedWsDir)
-	ws.agent = workspaceAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = workspaceAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	sourceSessionKey := "mock:" + channelID + ":U1"
 	resp, err := e.HandleRelay(context.Background(), "source", sourceSessionKey, "hello")
@@ -552,7 +552,7 @@ func TestHandleRelay_MultiWorkspaceRoutesBySourceSessionKey(t *testing.T) {
 	if got := e.sessions.ActiveSessionID("relay:source:mock:" + channelID); got != "" {
 		t.Fatalf("expected no global relay session, got %q", got)
 	}
-	if got := ws.sessions.ActiveSessionID("relay:source:mock:" + channelID); got == "" {
+	if got := ws.sessions[""].ActiveSessionID("relay:source:mock:" + channelID); got == "" {
 		t.Fatal("expected relay session in workspace session manager")
 	}
 	if b := e.workspaceBindings.Lookup("project:test", workspaceChannelKey("mock", channelID)); b == nil || b.Workspace != normalizedWsDir {

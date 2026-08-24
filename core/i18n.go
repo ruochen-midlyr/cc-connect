@@ -649,6 +649,12 @@ const (
 	MsgWsNotEnabled             MsgKey = "ws_not_enabled"
 	MsgWsNoBinding              MsgKey = "ws_no_binding"
 	MsgWsBindRequired           MsgKey = "ws_bind_required"
+	MsgWsAgentUsage             MsgKey = "ws_agent_usage"
+	MsgWsAgentUnknown           MsgKey = "ws_agent_unknown"
+	MsgWsAgentNoProfiles        MsgKey = "ws_agent_no_profiles"
+	MsgWsAgentNeedsBinding      MsgKey = "ws_agent_needs_binding"
+	MsgWsAgentSetSuccess        MsgKey = "ws_agent_set_success"
+	MsgWsAgentResetSuccess      MsgKey = "ws_agent_reset_success"
 	MsgWsInfo                   MsgKey = "ws_info"
 	MsgWsInfoShared             MsgKey = "ws_info_shared"
 	MsgWsUsage                  MsgKey = "ws_usage"
@@ -4028,6 +4034,48 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "此頻道未綁定工作區。",
 		LangJapanese:           "このチャンネルにワークスペースがバインドされていません。",
 		LangSpanish:            "No hay workspace vinculado a este canal.",
+	},
+	MsgWsAgentUsage: {
+		LangEnglish:            "Usage: `/workspace set-agent <name>`\nAvailable: %s (or `default`)",
+		LangChinese:            "用法: `/workspace set-agent <名称>`\n可选: %s（或 `default`）",
+		LangTraditionalChinese: "用法: `/workspace set-agent <名稱>`\n可選: %s（或 `default`）",
+		LangJapanese:           "使い方: `/workspace set-agent <名前>`\n利用可能: %s（または `default`）",
+		LangSpanish:            "Uso: `/workspace set-agent <nombre>`\nDisponibles: %s (o `default`)",
+	},
+	MsgWsAgentUnknown: {
+		LangEnglish:            "Unknown agent profile `%s`. Available: %s (or `default`)",
+		LangChinese:            "未知的 agent 配置 `%s`。可选: %s（或 `default`）",
+		LangTraditionalChinese: "未知的 agent 設定 `%s`。可選: %s（或 `default`）",
+		LangJapanese:           "不明なエージェントプロファイル `%s`。利用可能: %s（または `default`）",
+		LangSpanish:            "Perfil de agente desconocido `%s`. Disponibles: %s (o `default`)",
+	},
+	MsgWsAgentNoProfiles: {
+		LangEnglish:            "No agent profiles configured. Add [[agent_profiles]] entries to config.toml.",
+		LangChinese:            "未配置任何 agent 配置。请在 config.toml 中添加 [[agent_profiles]]。",
+		LangTraditionalChinese: "未設定任何 agent 設定。請在 config.toml 中新增 [[agent_profiles]]。",
+		LangJapanese:           "エージェントプロファイルが設定されていません。config.toml に [[agent_profiles]] を追加してください。",
+		LangSpanish:            "No hay perfiles de agente configurados. Anade entradas [[agent_profiles]] a config.toml.",
+	},
+	MsgWsAgentNeedsBinding: {
+		LangEnglish:            "Bind a workspace first: send `/workspace bind <name>`.",
+		LangChinese:            "请先绑定工作区: 发送 `/workspace bind <名称>`。",
+		LangTraditionalChinese: "請先綁定工作區: 發送 `/workspace bind <名稱>`。",
+		LangJapanese:           "先にワークスペースをバインドしてください: `/workspace bind <名前>`。",
+		LangSpanish:            "Vincula primero un workspace: envia `/workspace bind <nombre>`.",
+	},
+	MsgWsAgentSetSuccess: {
+		LangEnglish:            "OK Agent set to `%s` here. It takes effect on the next message.",
+		LangChinese:            "OK 已切换到 agent `%s`，下一条消息生效。",
+		LangTraditionalChinese: "OK 已切換到 agent `%s`，下一則訊息生效。",
+		LangJapanese:           "OK エージェントを `%s` に設定しました。次のメッセージから有効です。",
+		LangSpanish:            "OK Agente configurado a `%s`. Surte efecto en el proximo mensaje.",
+	},
+	MsgWsAgentResetSuccess: {
+		LangEnglish:            "OK Back to the project's default agent. It takes effect on the next message.",
+		LangChinese:            "OK 已恢复为项目默认 agent，下一条消息生效。",
+		LangTraditionalChinese: "OK 已恢復為專案預設 agent，下一則訊息生效。",
+		LangJapanese:           "OK プロジェクト既定のエージェントに戻しました。次のメッセージから有効です。",
+		LangSpanish:            "OK De vuelta al agente predeterminado del proyecto. Surte efecto en el proximo mensaje.",
 	},
 	MsgWsBindRequired: {
 		LangEnglish:            "No workspace bound here. Send `/workspace bind <name>` (or `/workspace route <absolute-path>`) before sending work.",

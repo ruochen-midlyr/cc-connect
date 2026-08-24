@@ -3153,12 +3153,12 @@ func TestCmdList_MultiWorkspaceUsesWorkspaceSessions(t *testing.T) {
 	e.workspaceBindings.Bind("project:test", channelID, "chan", normalizedWsDir)
 
 	ws := e.workspacePool.GetOrCreate(normalizedWsDir)
-	ws.agent = &stubListAgent{
+	ws.agents[""] = &stubListAgent{
 		sessions: []AgentSessionInfo{
 			{ID: "w1", Summary: "Workspace One", MessageCount: 2},
 		},
 	}
-	ws.sessions = NewSessionManager("")
+	ws.sessions[""] = NewSessionManager("")
 
 	msg := &Message{SessionKey: "slack:" + channelID + ":U1", ReplyCtx: "ctx"}
 	e.cmdList(p, msg, nil)
@@ -3391,8 +3391,8 @@ func TestHandleMessage_MultiWorkspacePreservesCCSessionKey(t *testing.T) {
 
 	wsAgent := &sessionEnvRecordingAgent{session: newResultAgentSession("ok")}
 	ws := e.workspacePool.GetOrCreate(normalizedWsDir)
-	ws.agent = wsAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = wsAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	msg := &Message{
 		SessionKey: "discord:" + channelID + ":U1",
@@ -4711,14 +4711,14 @@ func TestCmdModel_MultiWorkspaceUsesWorkspaceAgentAndSessions(t *testing.T) {
 
 	ws := e.workspacePool.GetOrCreate(wsDir)
 	wsAgent := &stubModelModeAgent{model: "gpt-4.1-mini"}
-	ws.agent = wsAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = wsAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	msg := &Message{SessionKey: "feishu:" + channelID + ":u1", ReplyCtx: "ctx"}
 
 	globalSession := e.sessions.GetOrCreateActive(msg.SessionKey)
 	globalSession.SetAgentSessionID("global-session", "test")
-	wsSession := ws.sessions.GetOrCreateActive(msg.SessionKey)
+	wsSession := ws.sessions[""].GetOrCreateActive(msg.SessionKey)
 	wsSession.SetAgentSessionID("workspace-session", "test")
 
 	e.cmdModel(p, msg, []string{"switch", "gpt"})
@@ -4729,7 +4729,7 @@ func TestCmdModel_MultiWorkspaceUsesWorkspaceAgentAndSessions(t *testing.T) {
 	if globalAgent.model != "gpt-4.1-mini" {
 		t.Fatalf("global agent model = %q, want unchanged", globalAgent.model)
 	}
-	if got := ws.sessions.GetOrCreateActive(msg.SessionKey).AgentSessionID; got != "workspace-session" {
+	if got := ws.sessions[""].GetOrCreateActive(msg.SessionKey).AgentSessionID; got != "workspace-session" {
 		t.Fatalf("workspace session id = %q, want preserved", got)
 	}
 	if got := e.sessions.GetOrCreateActive(msg.SessionKey).AgentSessionID; got != "global-session" {
@@ -4760,8 +4760,8 @@ func TestCmdModel_MultiWorkspaceSwitchDoesNotMutateProviderModel(t *testing.T) {
 		}},
 		active: "openai",
 	}
-	ws.agent = wsAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = wsAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	msg := &Message{SessionKey: "feishu:" + channelID + ":u1", ReplyCtx: "ctx"}
 
@@ -4825,8 +4825,8 @@ func TestCmdModel_MultiWorkspacePersistsWorkspaceModelForRecreatedAgent(t *testi
 
 	ws := e.workspacePool.GetOrCreate(wsDir)
 	ws.mu.Lock()
-	ws.agent = nil
-	ws.sessions = nil
+	ws.agents[""] = nil
+	ws.sessions[""] = nil
 	ws.mu.Unlock()
 
 	recreatedRaw, _, err := e.getOrCreateWorkspaceAgent(wsDir)
@@ -5524,12 +5524,12 @@ func TestCmdReasoning_MultiWorkspaceSavesToWorkspaceSessions(t *testing.T) {
 
 	ws := e.workspacePool.GetOrCreate(wsDir)
 	wsAgent := &stubModelModeAgent{}
-	ws.agent = wsAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = wsAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	msg := &Message{SessionKey: "feishu:" + channelID + ":u1", ReplyCtx: "ctx"}
 
-	wsSession := ws.sessions.GetOrCreateActive(msg.SessionKey)
+	wsSession := ws.sessions[""].GetOrCreateActive(msg.SessionKey)
 	wsSession.SetAgentSessionID("ws-session-id", "test")
 	wsSession.AddHistory("user", "hello")
 
@@ -5579,12 +5579,12 @@ func TestCmdProvider_ClearMultiWorkspaceUsesWorkspaceSessions(t *testing.T) {
 		providers: []ProviderConfig{{Name: "openai"}},
 		active:    "openai",
 	}
-	ws.agent = wsAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = wsAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	msg := &Message{SessionKey: "feishu:" + channelID + ":u1", ReplyCtx: "ctx"}
 
-	wsSession := ws.sessions.GetOrCreateActive(msg.SessionKey)
+	wsSession := ws.sessions[""].GetOrCreateActive(msg.SessionKey)
 	wsSession.SetAgentSessionID("ws-session-id", "test")
 
 	globalSession := e.sessions.GetOrCreateActive(msg.SessionKey)
@@ -5634,12 +5634,12 @@ func TestSwitchProvider_MultiWorkspaceUsesWorkspaceSessions(t *testing.T) {
 		providers: []ProviderConfig{{Name: "openai"}, {Name: "azure"}},
 		active:    "openai",
 	}
-	ws.agent = wsAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = wsAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	msg := &Message{SessionKey: "feishu:" + channelID + ":u1", ReplyCtx: "ctx"}
 
-	wsSession := ws.sessions.GetOrCreateActive(msg.SessionKey)
+	wsSession := ws.sessions[""].GetOrCreateActive(msg.SessionKey)
 	wsSession.SetAgentSessionID("ws-session-id", "test")
 
 	globalSession := e.sessions.GetOrCreateActive(msg.SessionKey)
@@ -9495,8 +9495,8 @@ func TestHandleCardNav_ModelUsesWorkspaceContext(t *testing.T) {
 
 	ws := e.workspacePool.GetOrCreate(wsDir)
 	wsAgent := &stubModelModeAgent{model: "workspace-old"}
-	ws.agent = wsAgent
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = wsAgent
+	ws.sessions[""] = NewSessionManager("")
 
 	interactiveKey := e.interactiveKeyForSessionKey(sessionKey)
 	e.interactiveMu.Lock()
@@ -9505,7 +9505,7 @@ func TestHandleCardNav_ModelUsesWorkspaceContext(t *testing.T) {
 
 	globalSession := e.sessions.GetOrCreateActive(sessionKey)
 	globalSession.SetAgentSessionID("global-session", "test")
-	wsSession := ws.sessions.GetOrCreateActive(sessionKey)
+	wsSession := ws.sessions[""].GetOrCreateActive(sessionKey)
 	wsSession.SetAgentSessionID("workspace-session", "test")
 
 	card := e.handleCardNav("act:/model switch 1", sessionKey)
@@ -9522,7 +9522,7 @@ func TestHandleCardNav_ModelUsesWorkspaceContext(t *testing.T) {
 	if globalAgent.model != "global-old" {
 		t.Fatalf("global agent model = %q, want unchanged", globalAgent.model)
 	}
-	if got := ws.sessions.GetOrCreateActive(sessionKey).AgentSessionID; got != "workspace-session" {
+	if got := ws.sessions[""].GetOrCreateActive(sessionKey).AgentSessionID; got != "workspace-session" {
 		t.Fatalf("workspace session id = %q, want preserved", got)
 	}
 	if got := e.sessions.GetOrCreateActive(sessionKey).AgentSessionID; got != "global-session" {
@@ -9592,8 +9592,8 @@ func TestHandleCardNav_ModelCardUsesWorkspaceAgent(t *testing.T) {
 	e.workspaceBindings.Bind("project:test", channelID, "chan", wsDir)
 
 	ws := e.workspacePool.GetOrCreate(wsDir)
-	ws.agent = &stubModelModeAgent{model: "workspace-model"}
-	ws.sessions = NewSessionManager("")
+	ws.agents[""] = &stubModelModeAgent{model: "workspace-model"}
+	ws.sessions[""] = NewSessionManager("")
 
 	card := e.handleCardNav("nav:/model", sessionKey)
 	if card == nil {

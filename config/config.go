@@ -92,6 +92,7 @@ type Config struct {
 	Providers          []ProviderConfig        `toml:"providers"`                      // global shared providers
 	ProviderPresetsURL string                  `toml:"provider_presets_url,omitempty"` // remote JSON URL for provider presets
 	SharedPlatforms    []SharedPlatformConfig  `toml:"shared_platforms"`               // platform connections shared by several projects
+	AgentProfiles      []AgentProfileConfig    `toml:"agent_profiles"`                 // named agent setups selectable per chat
 	Projects           []ProjectConfig         `toml:"projects"`
 	Commands           []CommandConfig         `toml:"commands"`     // global custom slash commands
 	Aliases            []AliasConfig           `toml:"aliases"`      // global command aliases
@@ -601,6 +602,23 @@ type CodexProviderConfig struct {
 }
 
 type PlatformConfig struct {
+	Type    string         `toml:"type"`
+	Options map[string]any `toml:"options"`
+}
+
+// AgentProfileConfig is a named agent setup a chat can switch to at runtime via
+// `/workspace set-agent <name>`, so one channel can drive Claude Code in one
+// thread and Codex in another.
+//
+// A project's [projects.agent] stays the default. A profile overrides the agent
+// type and its options for whichever chats select it; anything the profile does
+// not set falls back to the project default.
+type AgentProfileConfig struct {
+	// Name is what users type: "cc", "cdx", "ccor".
+	Name string `toml:"name"`
+	// Type is the agent implementation: "claudecode", "codex", "gemini", ...
+	// Empty keeps the project's agent type, which is how one CLI is pointed at
+	// a different model or endpoint through Options alone.
 	Type    string         `toml:"type"`
 	Options map[string]any `toml:"options"`
 }
