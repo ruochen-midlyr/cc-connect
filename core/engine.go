@@ -3068,8 +3068,14 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 			return
 		}
 		if workspace == "" {
-			// No workspace — handle init flow (unless it's a /workspace command)
-			if !strings.HasPrefix(content, "/workspace") && !strings.HasPrefix(content, "/ws ") {
+			// No workspace — handle init flow (unless it's a /workspace command).
+			//
+			// The flow names the new workspace after the chat it was started
+			// from, so it needs a chat with a name. A thread has none: the
+			// binding scope is "<channel>:t:<ts>", which no platform resolves,
+			// and running anyway would offer to create a directory with an
+			// empty name. Threads get the bind instruction below instead.
+			if channelName != "" && !strings.HasPrefix(content, "/workspace") && !strings.HasPrefix(content, "/ws ") {
 				if e.handleWorkspaceInitFlow(p, msg, channelName) {
 					return
 				}
