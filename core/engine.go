@@ -1139,23 +1139,35 @@ func (e *Engine) AgentProfileNames() []string {
 	return names
 }
 
-// boundAgentProfile returns the agent profile a chat selected, or "" for the
-// project default. An unknown name — a profile deleted from config since it was
-// bound — falls back to the default rather than failing the turn.
-func (e *Engine) boundAgentProfile(channelKey string) string {
-	if e.workspaceBindings == nil || channelKey == "" {
+// boundAgentProfile returns the agent profile a chat runs, or "" for the
+// project default.
+//
+// A thread-specific choice wins, then the channel's. The agent is set once per
+// channel and inherited by its threads, because which agent to talk to is a
+// property of the conversation while the workspace is chosen per task.
+//
+// An unknown name — a profile deleted from config since it was set — falls back
+// to the default rather than failing the turn.
+func (e *Engine) boundAgentProfile(scopeKeys ...string) string {
+	if e.projectState == nil {
 		return ""
 	}
-	b, _, usable := e.lookupEffectiveWorkspaceBinding(channelKey)
-	if b == nil || !usable || b.AgentProfile == "" {
-		return ""
+	for _, key := range scopeKeys {
+		if key == "" {
+			continue
+		}
+		name := e.projectState.AgentProfileOverride(key)
+		if name == "" {
+			continue
+		}
+		if _, known := e.lookupAgentProfile(name); !known {
+			slog.Warn("selected agent profile is no longer configured, using project default",
+				"project", e.name, "profile", name, "scope", key)
+			return ""
+		}
+		return name
 	}
-	if _, known := e.lookupAgentProfile(b.AgentProfile); !known {
-		slog.Warn("bound agent profile is no longer configured, using project default",
-			"project", e.name, "profile", b.AgentProfile)
-		return ""
-	}
-	return b.AgentProfile
+	return ""
 }
 
 // lookupAgentProfile resolves a profile name, reporting whether it is known.
@@ -3084,7 +3096,8 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 
 			var effectiveWorkspace string
 			wsAgent, wsSessions, _, effectiveWorkspace, err = e.workspaceContextFor(
-				workspace, msg.SessionKey, e.boundAgentProfile(channelKey))
+				workspace, msg.SessionKey,
+				e.boundAgentProfile(channelKey, workspaceChannelKey(msg.Platform, MessageChannelID(msg))))
 			if err != nil {
 				slog.Error("failed to create workspace agent", "workspace", workspace, "err", err)
 				e.reply(p, msg.ReplyCtx, fmt.Sprintf("Failed to initialize workspace: %v", err))
@@ -7180,10 +7193,14 @@ func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string)
 		} else {
 			wanted = ""
 		}
-		if !e.workspaceBindings.SetAgentProfile(projectKey, channelKey, wanted) {
-			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsAgentNeedsBinding))
+		if e.projectState == nil {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsAgentNoProfiles))
 			return
 		}
+		// Scope the choice to the channel, not the thread it was typed in, so
+		// it is set once and every thread in the channel inherits it.
+		e.projectState.SetAgentProfileOverride(
+			workspaceChannelKey(msg.Platform, MessageChannelID(msg)), wanted)
 		if wanted == "" {
 			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsAgentResetSuccess))
 		} else {

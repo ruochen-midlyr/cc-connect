@@ -413,31 +413,31 @@ const (
 	MsgCronIDLabel               MsgKey = "cron_id_label"
 	MsgCronFailedSuffix          MsgKey = "cron_failed_suffix"
 
-	MsgTimerNotAvailable  MsgKey = "timer_not_available"
-	MsgTimerUsage         MsgKey = "timer_usage"
-	MsgTimerAddUsage      MsgKey = "timer_add_usage"
-	MsgTimerAdded         MsgKey = "timer_added"
-	MsgTimerAddedExec     MsgKey = "timer_added_exec"
-	MsgTimerAddExecUsage  MsgKey = "timer_addexec_usage"
-	MsgTimerEmpty         MsgKey = "timer_empty"
-	MsgTimerListTitle     MsgKey = "timer_list_title"
-	MsgTimerListFooter    MsgKey = "timer_list_footer"
-	MsgTimerDelUsage      MsgKey = "timer_del_usage"
-	MsgTimerMuteUsage     MsgKey = "timer_mute_usage"
-	MsgTimerDeleted       MsgKey = "timer_deleted"
-	MsgTimerNotFound      MsgKey = "timer_not_found"
-	MsgTimerMuted         MsgKey = "timer_muted"
-	MsgTimerUnmuted       MsgKey = "timer_unmuted"
-	MsgTimerCardHint      MsgKey = "timer_card_hint"
-	MsgTimerBtnMute       MsgKey = "timer_btn_mute"
-	MsgTimerBtnUnmute     MsgKey = "timer_btn_unmute"
-	MsgTimerBtnDelete     MsgKey = "timer_btn_delete"
-	MsgTimerIDLabel       MsgKey = "timer_id_label"
-	MsgTimerScheduledLabel MsgKey = "timer_scheduled_label"
-	MsgTimerFailedSuffix  MsgKey = "timer_failed_suffix"
-	MsgCommandsTagAgent          MsgKey = "commands_tag_agent"
-	MsgCommandsTagShell          MsgKey = "commands_tag_shell"
-	MsgUpgradeTimeoutSuffix      MsgKey = "upgrade_timeout_suffix"
+	MsgTimerNotAvailable    MsgKey = "timer_not_available"
+	MsgTimerUsage           MsgKey = "timer_usage"
+	MsgTimerAddUsage        MsgKey = "timer_add_usage"
+	MsgTimerAdded           MsgKey = "timer_added"
+	MsgTimerAddedExec       MsgKey = "timer_added_exec"
+	MsgTimerAddExecUsage    MsgKey = "timer_addexec_usage"
+	MsgTimerEmpty           MsgKey = "timer_empty"
+	MsgTimerListTitle       MsgKey = "timer_list_title"
+	MsgTimerListFooter      MsgKey = "timer_list_footer"
+	MsgTimerDelUsage        MsgKey = "timer_del_usage"
+	MsgTimerMuteUsage       MsgKey = "timer_mute_usage"
+	MsgTimerDeleted         MsgKey = "timer_deleted"
+	MsgTimerNotFound        MsgKey = "timer_not_found"
+	MsgTimerMuted           MsgKey = "timer_muted"
+	MsgTimerUnmuted         MsgKey = "timer_unmuted"
+	MsgTimerCardHint        MsgKey = "timer_card_hint"
+	MsgTimerBtnMute         MsgKey = "timer_btn_mute"
+	MsgTimerBtnUnmute       MsgKey = "timer_btn_unmute"
+	MsgTimerBtnDelete       MsgKey = "timer_btn_delete"
+	MsgTimerIDLabel         MsgKey = "timer_id_label"
+	MsgTimerScheduledLabel  MsgKey = "timer_scheduled_label"
+	MsgTimerFailedSuffix    MsgKey = "timer_failed_suffix"
+	MsgCommandsTagAgent     MsgKey = "commands_tag_agent"
+	MsgCommandsTagShell     MsgKey = "commands_tag_shell"
+	MsgUpgradeTimeoutSuffix MsgKey = "upgrade_timeout_suffix"
 
 	MsgCronScheduleLabel MsgKey = "cron_schedule_label"
 	MsgCronNextRunLabel  MsgKey = "cron_next_run_label"
@@ -652,7 +652,6 @@ const (
 	MsgWsAgentUsage             MsgKey = "ws_agent_usage"
 	MsgWsAgentUnknown           MsgKey = "ws_agent_unknown"
 	MsgWsAgentNoProfiles        MsgKey = "ws_agent_no_profiles"
-	MsgWsAgentNeedsBinding      MsgKey = "ws_agent_needs_binding"
 	MsgWsAgentSetSuccess        MsgKey = "ws_agent_set_success"
 	MsgWsAgentResetSuccess      MsgKey = "ws_agent_reset_success"
 	MsgWsInfo                   MsgKey = "ws_info"
@@ -4055,13 +4054,6 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "未設定任何 agent 設定。請在 config.toml 中新增 [[agent_profiles]]。",
 		LangJapanese:           "エージェントプロファイルが設定されていません。config.toml に [[agent_profiles]] を追加してください。",
 		LangSpanish:            "No hay perfiles de agente configurados. Anade entradas [[agent_profiles]] a config.toml.",
-	},
-	MsgWsAgentNeedsBinding: {
-		LangEnglish:            "Bind a workspace first: send `/workspace bind <name>`.",
-		LangChinese:            "请先绑定工作区: 发送 `/workspace bind <名称>`。",
-		LangTraditionalChinese: "請先綁定工作區: 發送 `/workspace bind <名稱>`。",
-		LangJapanese:           "先にワークスペースをバインドしてください: `/workspace bind <名前>`。",
-		LangSpanish:            "Vincula primero un workspace: envia `/workspace bind <nombre>`.",
 	},
 	MsgWsAgentSetSuccess: {
 		LangEnglish:            "OK Agent set to `%s` here. It takes effect on the next message.",

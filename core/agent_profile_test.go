@@ -37,69 +37,63 @@ func TestSetAgentProfiles(t *testing.T) {
 	}
 }
 
-func TestSetAgentProfileNeedsBinding(t *testing.T) {
-	m := NewWorkspaceBindingManager(filepath.Join(t.TempDir(), "bindings.json"))
+func TestBoundAgentProfileScopes(t *testing.T) {
+	e := &Engine{
+		name:         "p",
+		projectState: NewProjectStateStore(filepath.Join(t.TempDir(), "state.json")),
+	}
+	e.SetAgentProfiles([]AgentProfile{{Name: "cc"}, {Name: "cdx", Type: "codex"}})
 
-	if m.SetAgentProfile("project:p", "slack:C1:t:1", "cdx") {
-		t.Fatal("setting an agent before a workspace is bound must fail: the choice is stored on the binding")
+	const (
+		channel = "slack:C1"
+		threadA = "slack:C1:t:100"
+		threadB = "slack:C1:t:200"
+	)
+
+	// Nothing set anywhere: the project default.
+	if got := e.boundAgentProfile(threadA, channel); got != "" {
+		t.Fatalf("boundAgentProfile = %q, want the project default", got)
 	}
 
-	m.Bind("project:p", "slack:C1:t:1", "chan", "/tmp/ws")
-	if !m.SetAgentProfile("project:p", "slack:C1:t:1", "cdx") {
-		t.Fatal("setting an agent on a bound chat should succeed")
-	}
-	if b, _ := m.LookupEffective("project:p", "slack:C1:t:1"); b == nil || b.AgentProfile != "cdx" {
-		t.Fatalf("AgentProfile not stored, got %+v", b)
-	}
-}
-
-func TestSetAgentProfileDoesNotLeakToInheritedScopes(t *testing.T) {
-	m := NewWorkspaceBindingManager(filepath.Join(t.TempDir(), "bindings.json"))
-
-	// A channel-level binding, plus the per-thread copies the engine makes when
-	// a threaded message first arrives. Lookup itself does not walk from a
-	// thread up to its channel; inheritance is that copy.
-	m.Bind("project:p", "slack:C1", "chan", "/tmp/ws")
-	threadA := "slack:C1:t:100"
-	threadB := "slack:C1:t:200"
-	m.MigrateChannelKey("project:p", "slack:C1", threadA)
-	m.MigrateChannelKey("project:p", "slack:C1", threadB)
-
-	if !m.SetAgentProfile("project:p", threadA, "cdx") {
-		t.Fatal("thread A should be able to pick an agent once it has a binding")
+	// Set once on the channel; every thread in it inherits.
+	e.projectState.SetAgentProfileOverride(channel, "cdx")
+	for _, key := range []string{threadA, threadB} {
+		if got := e.boundAgentProfile(key, channel); got != "cdx" {
+			t.Errorf("boundAgentProfile(%s) = %q, want cdx inherited from the channel", key, got)
+		}
 	}
 
-	if b, _ := m.LookupEffective("project:p", threadA); b == nil || b.AgentProfile != "cdx" {
-		t.Fatalf("thread A should run cdx, got %+v", b)
+	// A thread-specific choice wins over the channel's.
+	e.projectState.SetAgentProfileOverride(threadA, "cc")
+	if got := e.boundAgentProfile(threadA, channel); got != "cc" {
+		t.Errorf("thread A = %q, want its own cc", got)
 	}
-	if b, _ := m.LookupEffective("project:p", threadB); b == nil || b.AgentProfile != "" {
-		t.Fatalf("thread B must not inherit thread A's agent choice, got %+v", b)
+	if got := e.boundAgentProfile(threadB, channel); got != "cdx" {
+		t.Errorf("thread B = %q, want the channel's cdx", got)
 	}
-	if b, _ := m.LookupEffective("project:p", "slack:C1"); b == nil || b.AgentProfile != "" {
-		t.Fatalf("the channel binding itself must be unchanged, got %+v", b)
+
+	// Clearing returns the chat to the channel default.
+	e.projectState.SetAgentProfileOverride(threadA, "")
+	if got := e.boundAgentProfile(threadA, channel); got != "cdx" {
+		t.Errorf("after clearing, thread A = %q, want the channel's cdx", got)
 	}
 }
 
 func TestBoundAgentProfileFallsBackWhenProfileIsGone(t *testing.T) {
-	wsDir := t.TempDir()
 	e := &Engine{
-		name:              "p",
-		multiWorkspace:    true,
-		workspaceBindings: NewWorkspaceBindingManager(filepath.Join(t.TempDir(), "bindings.json")),
+		name:         "p",
+		projectState: NewProjectStateStore(filepath.Join(t.TempDir(), "state.json")),
 	}
 	e.SetAgentProfiles([]AgentProfile{{Name: "cdx", Type: "codex"}})
+	e.projectState.SetAgentProfileOverride("slack:C1", "cdx")
 
-	key := "slack:C1:t:1"
-	e.workspaceBindings.Bind("project:p", key, "chan", wsDir)
-	e.workspaceBindings.SetAgentProfile("project:p", key, "cdx")
-
-	if got := e.boundAgentProfile(key); got != "cdx" {
+	if got := e.boundAgentProfile("slack:C1"); got != "cdx" {
 		t.Fatalf("boundAgentProfile = %q, want cdx", got)
 	}
 
 	// Dropping the profile from config must not wedge the chat.
 	e.SetAgentProfiles(nil)
-	if got := e.boundAgentProfile(key); got != "" {
+	if got := e.boundAgentProfile("slack:C1"); got != "" {
 		t.Fatalf("boundAgentProfile = %q, want the project default after the profile was removed", got)
 	}
 }

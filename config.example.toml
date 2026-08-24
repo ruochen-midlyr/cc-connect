@@ -691,12 +691,14 @@ level = "info" # debug, info, warn, error
 # 命名的 agent 配置，聊天中用 `/workspace set-agent <名称>` 切换，
 # 于是同一个仓库上可以一个话题跑 Claude Code、另一个跑 Codex。
 #
-# The choice is stored on the workspace binding, so it is scoped exactly like
-# the workspace: per channel, or per thread when session_scope = "thread".
-# Each profile gets its own agent process and session store, and switching
-# takes effect on the next message.
-# 该选择保存在工作区绑定上，作用域与工作区一致：按频道，或在 session_scope =
-# "thread" 时按话题。每个配置有独立的 agent 进程和会话存储，切换后下一条消息生效。
+# The choice is per channel and inherited by every thread in it: which agent to
+# talk to belongs to the conversation, while the workspace is chosen per task.
+# So set the agent once in a channel, then bind a workspace in each thread.
+# Each profile gets its own agent process and session store, and switching takes
+# effect on the next message.
+# 该选择按频道生效，频道内所有话题继承：跟哪个 agent 对话属于会话本身，而工作区是
+# 每个任务各自选择。所以在频道里设置一次 agent，然后在每个话题里绑定工作区。
+# 每个配置有独立的 agent 进程和会话存储，切换后下一条消息生效。
 #
 # [[agent_profiles]]
 # name = "cc"                       # what users type / 用户输入的名称
@@ -722,9 +724,13 @@ level = "info" # debug, info, warn, error
 # AZ_MODEL = "ox-alpha-or"
 #
 # Usage / 用法:
-#   /workspace bind my-repo         # bind a workspace first / 先绑定工作区
-#   /workspace set-agent cdx        # then choose the agent / 再选择 agent
+#   /workspace set-agent cdx        # once per channel / 每个频道设置一次
+#   /workspace bind my-repo         # per thread / 每个话题各自绑定
 #   /workspace set-agent default    # back to the project's agent / 回到项目默认 agent
+#
+# set-agent needs no workspace binding, and binding a workspace does not reset
+# the agent. The two are independent.
+# set-agent 不需要先绑定工作区，绑定工作区也不会重置 agent，两者互相独立。
 #
 # Note: a profile that changes `type` starts from a clean option set, because
 # permission modes and model names do not carry across different CLIs.

@@ -12,6 +12,11 @@ type projectStateData struct {
 	WorkDirOverride         string            `json:"work_dir_override,omitempty"`
 	WorkspaceDirOverrides   map[string]string `json:"workspace_dir_overrides,omitempty"`
 	WorkspaceModelOverrides map[string]string `json:"workspace_model_overrides,omitempty"`
+	// AgentProfileOverrides records which named agent a chat runs, keyed by
+	// channel key. It is deliberately separate from workspace bindings: the
+	// agent is a property of the conversation, not of the directory, so it is
+	// set once per channel and inherited by every thread in it.
+	AgentProfileOverrides map[string]string `json:"agent_profile_overrides,omitempty"`
 }
 
 // ProjectStateStore persists lightweight runtime state for one project.
@@ -69,6 +74,37 @@ func (ps *ProjectStateStore) ClearWorkspaceDirOverride(workspace string) {
 	if len(ps.state.WorkspaceDirOverrides) == 0 {
 		ps.state.WorkspaceDirOverrides = nil
 	}
+}
+
+// AgentProfileOverride returns the agent profile bound to a channel key, or ""
+// for the project default.
+func (ps *ProjectStateStore) AgentProfileOverride(channelKey string) string {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	if ps.state.AgentProfileOverrides == nil {
+		return ""
+	}
+	return ps.state.AgentProfileOverrides[channelKey]
+}
+
+// SetAgentProfileOverride binds a chat to a named agent profile. An empty
+// profile clears the binding, returning the chat to the project default.
+func (ps *ProjectStateStore) SetAgentProfileOverride(channelKey, profile string) {
+	if channelKey == "" {
+		return
+	}
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if profile == "" {
+		delete(ps.state.AgentProfileOverrides, channelKey)
+		ps.saveLocked()
+		return
+	}
+	if ps.state.AgentProfileOverrides == nil {
+		ps.state.AgentProfileOverrides = make(map[string]string)
+	}
+	ps.state.AgentProfileOverrides[channelKey] = profile
+	ps.saveLocked()
 }
 
 func (ps *ProjectStateStore) WorkspaceModelOverride(workspace string) string {
