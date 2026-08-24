@@ -648,6 +648,7 @@ const (
 	// Multi-workspace messages
 	MsgWsNotEnabled             MsgKey = "ws_not_enabled"
 	MsgWsNoBinding              MsgKey = "ws_no_binding"
+	MsgWsBindRequired           MsgKey = "ws_bind_required"
 	MsgWsInfo                   MsgKey = "ws_info"
 	MsgWsInfoShared             MsgKey = "ws_info_shared"
 	MsgWsUsage                  MsgKey = "ws_usage"
@@ -4027,6 +4028,13 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "此頻道未綁定工作區。",
 		LangJapanese:           "このチャンネルにワークスペースがバインドされていません。",
 		LangSpanish:            "No hay workspace vinculado a este canal.",
+	},
+	MsgWsBindRequired: {
+		LangEnglish:            "No workspace bound here. Send `/workspace bind <name>` (or `/workspace route <absolute-path>`) before sending work.",
+		LangChinese:            "这里还没有绑定工作区。请先发送 `/workspace bind <名称>`（或 `/workspace route <绝对路径>`）再派活。",
+		LangTraditionalChinese: "這裡還沒有綁定工作區。請先發送 `/workspace bind <名稱>`（或 `/workspace route <絕對路徑>`）再派活。",
+		LangJapanese:           "ここにはワークスペースがバインドされていません。作業を依頼する前に `/workspace bind <名前>`（または `/workspace route <絶対パス>`）を送信してください。",
+		LangSpanish:            "No hay workspace vinculado aquí. Envía `/workspace bind <nombre>` (o `/workspace route <ruta-absoluta>`) antes de enviar trabajo.",
 	},
 	MsgWsInfo: {
 		LangEnglish:            "Workspace: `%s`\nBound: %s",

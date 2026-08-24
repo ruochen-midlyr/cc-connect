@@ -684,6 +684,61 @@ level = "info" # debug, info, warn, error
 #
 
 # =============================================================================
+# Shared Platforms / 共享平台连接
+# =============================================================================
+# One bot connection serving several projects, with the channel deciding which
+# project — and therefore which agent — handles a message. Use it to run Claude
+# Code in one channel and Codex in another from a single Slack app.
+# 一个 bot 连接服务多个项目，由频道决定交给哪个项目（也就是哪个 agent）处理。
+# 可以用一个 Slack app 在某个频道跑 Claude Code、另一个频道跑 Codex。
+#
+# Without this, each project builds its own connection from its own credentials.
+# Two projects sharing one Slack app that way open two Socket Mode connections,
+# and Slack delivers each event to only one of them — so messages regularly
+# arrive at the project that does not own the channel and are dropped.
+# 否则每个项目会各自建立连接。两个项目共用一个 Slack app 会开出两条 Socket Mode
+# 连接，而 Slack 只把每个事件投递给其中一条，导致消息经常落到不负责该频道的项目
+# 上并被丢弃。
+#
+# [[shared_platforms]]
+# id = "slack-main"                 # the name projects reference / 项目引用的名称
+# type = "slack"
+# [shared_platforms.options]
+# bot_token = "xoxb-..."
+# app_token = "xapp-..."
+# session_scope = "thread"
+#
+# [[projects]]
+# name = "claude-code"
+# platform_ref = "slack-main"       # receive from the shared connection / 从共享连接接收
+# channels = ["#claude-code"]       # channel IDs or names / 频道 ID 或名称
+# mode = "multi-workspace"
+# base_dir = "~/workspace"
+# [projects.agent]
+# type = "claudecode"
+#
+# [[projects]]
+# name = "codex"
+# platform_ref = "slack-main"
+# channels = ["#codex"]
+# mode = "multi-workspace"
+# base_dir = "~/workspace"
+# [projects.agent]
+# type = "codex"
+# [projects.agent.options]
+# mode = "full-auto"
+#
+# Notes / 说明:
+# - Omit `channels` on exactly one project to make it the catch-all for every
+#   channel no other project claims, including DMs. Two catch-alls are rejected
+#   at startup. 某一个项目不写 channels 即成为兜底项目，处理其他项目未认领的所有
+#   频道（含私聊）；配置两个兜底项目会在启动时报错。
+# - A channel claimed by two projects is rejected at startup rather than routed
+#   arbitrarily. 同一频道被两个项目认领时会在启动时报错，而不是随意路由。
+# - Projects without `platform_ref` keep building their own platforms as before.
+#   没有 platform_ref 的项目行为不变，仍然自建平台。
+
+# =============================================================================
 # Multi-workspace Mode / 多工作区模式
 # =============================================================================
 # Single bot, multiple workspaces. Channel name maps to ~/workspace/<channel-name>

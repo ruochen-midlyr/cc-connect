@@ -355,9 +355,12 @@ type RateLimitCfg struct {
 
 // Engine routes messages between platforms and the agent for a single project.
 type Engine struct {
-	name                  string
-	agent                 Agent
-	platforms             []Platform
+	name      string
+	agent     Agent
+	platforms []Platform
+	// sharedPlatforms marks entries of platforms that another owner starts and
+	// stops. See AttachSharedPlatform.
+	sharedPlatforms       map[Platform]bool
 	sessions              *SessionManager
 	ctx                   context.Context
 	cancel                context.CancelFunc
@@ -1089,6 +1092,35 @@ func (e *Engine) SetModelSaveFunc(fn func(model string) error) {
 // or if the engine is already running, it is started immediately.
 func (e *Engine) AddPlatform(p Platform) {
 	e.platforms = append(e.platforms, p)
+}
+
+// AttachSharedPlatform registers a platform that this engine sends through but
+// does not own. Several engines can share one platform connection — a single
+// Slack app serving one project per channel, say — and the caller starts it
+// once with a handler that routes each message to the right engine.
+//
+// The platform still participates in replies, capability probing and readiness
+// bookkeeping; only Start and Stop are skipped, because a shared connection
+// must outlive any single engine's lifecycle.
+func (e *Engine) AttachSharedPlatform(p Platform) {
+	if p == nil {
+		return
+	}
+	if e.sharedPlatforms == nil {
+		e.sharedPlatforms = make(map[Platform]bool)
+	}
+	e.sharedPlatforms[p] = true
+	e.platforms = append(e.platforms, p)
+}
+
+// HandleMessage feeds a message to this engine. It exists so a shared platform's
+// routing handler can dispatch into the engine that owns the message's channel.
+func (e *Engine) HandleMessage(p Platform, msg *Message) {
+	e.handleMessage(p, msg)
+}
+
+func (e *Engine) ownsPlatform(p Platform) bool {
+	return !e.sharedPlatforms[p]
 }
 
 func (e *Engine) SetCronScheduler(cs *CronScheduler) {
@@ -2313,7 +2345,17 @@ func (e *Engine) Start() error {
 	var startErrs []error
 	readyCount := 0
 	pendingCount := 0
+	ownedCount := 0
 	for _, p := range e.platforms {
+		// A shared platform is started once by its owner with a routing handler.
+		// Starting it here would overwrite that handler with this engine's, so
+		// every message would land in whichever engine started last.
+		if !e.ownsPlatform(p) {
+			e.onPlatformReady(p)
+			readyCount++
+			continue
+		}
+		ownedCount++
 		_, isAsync := p.(AsyncRecoverablePlatform)
 		if async, ok := p.(AsyncRecoverablePlatform); ok {
 			async.SetLifecycleHandler(e)
@@ -2344,8 +2386,8 @@ func (e *Engine) Start() error {
 		slog.Info("engine started", "project", e.name, "agent", e.agent.Name(), "platforms", len(e.platforms))
 	}
 
-	// Only return error if ALL platforms failed
-	if len(startErrs) == len(e.platforms) && len(e.platforms) > 0 {
+	// Only return error if ALL platforms this engine owns failed
+	if len(startErrs) == ownedCount && ownedCount > 0 {
 		return startErrs[0] // Return first error
 	}
 
@@ -2366,8 +2408,13 @@ func (e *Engine) Stop() error {
 	}
 
 	// Stop platforms after cancellation so they can unwind against the closed context.
+	// Shared platforms belong to their owner: stopping one here would cut off the
+	// other engines still using that connection.
 	var errs []error
 	for _, p := range e.platforms {
+		if !e.ownsPlatform(p) {
+			continue
+		}
 		if err := p.Stop(); err != nil {
 			errs = append(errs, fmt.Errorf("stop platform %s: %w", p.Name(), err))
 		}
@@ -2946,8 +2993,12 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 				delete(e.initFlows, channelKey)
 				e.initFlowsMu.Unlock()
 			}
-			// If init flow didn't consume, only workspace commands work
+			// If init flow didn't consume, only workspace commands work. Say so
+			// rather than dropping the message: with thread-scoped bindings an
+			// unbound thread is the normal starting state, and silence there
+			// reads as the bot being broken.
 			if !strings.HasPrefix(content, "/") {
+				e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsBindRequired))
 				return
 			}
 		} else {
@@ -16430,6 +16481,19 @@ func workspaceChannelKey(platformName, channelID string) string {
 
 func extractWorkspaceChannelKey(sessionKey string) string {
 	return workspaceChannelKey(extractPlatformName(sessionKey), extractChannelID(sessionKey))
+}
+
+// MessageChannelID returns the bare platform channel a message arrived in.
+//
+// It reads the session key rather than ChannelKey because a platform may widen
+// ChannelKey to scope workspace bindings below the channel — Slack threads and
+// Feishu topics both do — and a caller routing by channel wants the channel
+// itself, not that narrower scope.
+func MessageChannelID(msg *Message) string {
+	if msg == nil {
+		return ""
+	}
+	return extractChannelID(msg.SessionKey)
 }
 
 // effectiveChannelID returns the channel identifier from a Message.

@@ -91,6 +91,7 @@ type Config struct {
 	Quiet              *bool                   `toml:"quiet,omitempty"`
 	Providers          []ProviderConfig        `toml:"providers"`                      // global shared providers
 	ProviderPresetsURL string                  `toml:"provider_presets_url,omitempty"` // remote JSON URL for provider presets
+	SharedPlatforms    []SharedPlatformConfig  `toml:"shared_platforms"`               // platform connections shared by several projects
 	Projects           []ProjectConfig         `toml:"projects"`
 	Commands           []CommandConfig         `toml:"commands"`     // global custom slash commands
 	Aliases            []AliasConfig           `toml:"aliases"`      // global command aliases
@@ -477,11 +478,19 @@ type ProjectConfig struct {
 	// init flow to bind existing local directories. Default false keeps init
 	// limited to git URLs; use /workspace bind or /workspace route for explicit
 	// local bindings.
-	WorkspaceInitAllowLocalPaths *bool              `toml:"workspace_init_allow_local_paths,omitempty"`
-	Agent                        AgentConfig        `toml:"agent"`
-	Platforms                    []PlatformConfig   `toml:"platforms"`
-	Heartbeat                    HeartbeatConfig    `toml:"heartbeat"`
-	AutoCompress                 AutoCompressConfig `toml:"auto_compress"`
+	WorkspaceInitAllowLocalPaths *bool            `toml:"workspace_init_allow_local_paths,omitempty"`
+	Agent                        AgentConfig      `toml:"agent"`
+	Platforms                    []PlatformConfig `toml:"platforms"`
+	// PlatformRef names a [[shared_platforms]] entry this project receives from,
+	// instead of (or in addition to) owning platforms of its own.
+	PlatformRef string `toml:"platform_ref,omitempty"`
+	// Channels lists the channel IDs or names on the shared platform this
+	// project answers in — "#codex" and "C09ABCDEF" are both accepted. Exactly
+	// one project per shared platform may leave this empty; it then handles every
+	// channel no other project claims, including DMs.
+	Channels     []string           `toml:"channels,omitempty"`
+	Heartbeat    HeartbeatConfig    `toml:"heartbeat"`
+	AutoCompress AutoCompressConfig `toml:"auto_compress"`
 	// ResetOnIdleMins automatically rotates to a new cc-connect session after
 	// the current session has been inactive for the specified number of minutes.
 	// 0 or nil disables the behavior.
@@ -592,6 +601,22 @@ type CodexProviderConfig struct {
 }
 
 type PlatformConfig struct {
+	Type    string         `toml:"type"`
+	Options map[string]any `toml:"options"`
+}
+
+// SharedPlatformConfig declares one platform connection that several projects
+// use at once, so a single bot can front more than one agent.
+//
+// Without this, each project builds its own platform instance from its own
+// credentials. Pointing two projects at the same Slack app that way opens two
+// Socket Mode connections, and Slack hands each event to exactly one of them —
+// so roughly half the messages arrive at the project that does not own the
+// channel and are dropped. A shared platform is constructed and started once,
+// then messages are routed by channel.
+type SharedPlatformConfig struct {
+	// ID is the name projects reference through platform_ref.
+	ID      string         `toml:"id"`
 	Type    string         `toml:"type"`
 	Options map[string]any `toml:"options"`
 }

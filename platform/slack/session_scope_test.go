@@ -1,6 +1,10 @@
 package slack
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/chenhg5/cc-connect/core"
+)
 
 func TestNormalizeSessionScope(t *testing.T) {
 	cases := []struct {
@@ -76,5 +80,58 @@ func TestReconstructReplyCtx(t *testing.T) {
 	}
 	if _, err := p.ReconstructReplyCtx("telegram:123"); err == nil {
 		t.Error("ReconstructReplyCtx should reject non-slack keys")
+	}
+}
+
+func TestPopulateWorkspaceChannelKeys(t *testing.T) {
+	const (
+		ch     = "C123"
+		thread = "1717000000.000100"
+	)
+	cases := []struct {
+		name       string
+		scope      string
+		channel    string
+		threadTS   string
+		wantKey    string
+		wantLegacy string
+	}{
+		{
+			name:  "thread scope scopes the binding to the thread",
+			scope: "thread", channel: ch, threadTS: thread,
+			wantKey: "C123:t:1717000000.000100", wantLegacy: ch,
+		},
+		{
+			// Slack slash commands carry no thread_ts. Scoping them to a thread
+			// is impossible, so they must stay channel-scoped rather than
+			// inventing a key.
+			name:  "no thread context leaves the message untouched",
+			scope: "thread", channel: ch, threadTS: "",
+			wantKey: "", wantLegacy: "",
+		},
+		{
+			name:  "user scope keeps channel-level bindings",
+			scope: "user", channel: ch, threadTS: thread,
+			wantKey: "", wantLegacy: "",
+		},
+		{
+			name:  "channel scope keeps channel-level bindings",
+			scope: "channel", channel: ch, threadTS: thread,
+			wantKey: "", wantLegacy: "",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := &Platform{sessionScope: c.scope}
+			msg := &core.Message{}
+			p.populateWorkspaceChannelKeys(msg, c.channel, c.threadTS)
+			if msg.ChannelKey != c.wantKey {
+				t.Errorf("ChannelKey = %q, want %q", msg.ChannelKey, c.wantKey)
+			}
+			if msg.LegacyChannelKey != c.wantLegacy {
+				t.Errorf("LegacyChannelKey = %q, want %q", msg.LegacyChannelKey, c.wantLegacy)
+			}
+		})
 	}
 }

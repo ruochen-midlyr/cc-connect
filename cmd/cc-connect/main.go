@@ -355,6 +355,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Shared platform connections are constructed before any project so that
+	// projects can attach to them as they are built. They are started later,
+	// once every project has claimed its channels.
+	sharedSpecs := make([]sharedPlatformSpec, 0, len(cfg.SharedPlatforms))
+	for _, sc := range cfg.SharedPlatforms {
+		sharedSpecs = append(sharedSpecs, sharedPlatformSpec{ID: sc.ID, Type: sc.Type, Options: sc.Options})
+	}
+	sharedPlatforms, err := buildSharedPlatforms(cfg.DataDir, sharedSpecs)
+	if err != nil {
+		slog.Error("failed to build shared platforms", "error", err)
+		os.Exit(1)
+	}
+
 	engines := make([]*core.Engine, 0, len(cfg.Projects))
 	effectiveWorkDirs := make([]string, 0, len(cfg.Projects))
 
@@ -419,6 +432,23 @@ func main() {
 		}
 
 		engine := core.NewEngine(proj.Name, agent, platforms, sessionFile, lang)
+
+		// Attach a shared connection, if this project receives from one, and
+		// claim the channels it answers in.
+		if ref := strings.TrimSpace(proj.PlatformRef); ref != "" {
+			sp, ok := sharedPlatforms[ref]
+			if !ok {
+				slog.Error("project references an unknown shared platform",
+					"project", proj.Name, "platform_ref", ref)
+				os.Exit(1)
+			}
+			if err := sp.register(engine, proj.Name, proj.Channels); err != nil {
+				slog.Error("failed to route shared platform channels", "error", err)
+				os.Exit(1)
+			}
+			engine.AttachSharedPlatform(sp.platform)
+		}
+
 		// Wire display settings including show_context_indicator and reply_footer
 		// Global [display] config can be overridden by project-level settings
 		_, _, _, _, _, showCtx, showFooter, _ := config.EffectiveDisplay(cfg, &proj)
@@ -1028,6 +1058,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Shared connections come up last, once every engine behind them is ready,
+	// so the first message routed already has a running engine to land in.
+	for _, sp := range sharedPlatforms {
+		if err := sp.start(); err != nil {
+			slog.Error("shared platform failed to start", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	if cronSched != nil {
 		if err := cronSched.Start(); err != nil {
 			slog.Error("cron scheduler start failed", "error", err)
@@ -1347,6 +1386,13 @@ func main() {
 	for _, e := range engines {
 		if err := e.Stop(); err != nil {
 			slog.Error("shutdown error", "error", err)
+		}
+	}
+	// Engines skip shared connections on Stop because they do not own them, so
+	// close those here, after every engine behind them has wound down.
+	for _, sp := range sharedPlatforms {
+		if err := sp.stop(); err != nil {
+			slog.Error("shutdown error", "shared_platform", sp.id, "error", err)
 		}
 	}
 	if logCloser != nil {

@@ -124,6 +124,25 @@ func threadRootTS(threadTS, msgTS string) string {
 	return msgTS
 }
 
+// populateWorkspaceChannelKeys scopes multi-workspace bindings to a Slack thread
+// when session_scope is "thread", mirroring the Feishu adapter's topic handling.
+//
+// Without ChannelKey the engine falls back to parsing the session key, and that
+// parse keeps only the channel segment — so every thread in a channel shares one
+// binding even though each has its own session. LegacyChannelKey carries the
+// old channel-scoped key so the engine migrates an existing binding onto the
+// first thread that uses it instead of stranding it.
+//
+// Slash commands are deliberately excluded: Slack's slash-command payload has no
+// thread_ts, so a command cannot know which thread it came from.
+func (p *Platform) populateWorkspaceChannelKeys(msg *core.Message, channel, threadTS string) {
+	if msg == nil || p.sessionScope != "thread" || threadTS == "" || channel == "" {
+		return
+	}
+	msg.ChannelKey = channel + ":t:" + threadTS
+	msg.LegacyChannelKey = channel
+}
+
 func (p *Platform) Name() string { return "slack" }
 
 func (p *Platform) Start(handler core.MessageHandler) error {
@@ -220,6 +239,7 @@ func (p *Platform) handleEvent(evt socketmode.Event) {
 					MessageID: ev.TimeStamp,
 					ReplyCtx:  replyContext{channel: ev.Channel, timestamp: threadTS},
 				}
+				p.populateWorkspaceChannelKeys(msg, ev.Channel, threadTS)
 				p.handler(p, msg)
 
 			case *slackevents.AssistantThreadStartedEvent:
@@ -281,6 +301,7 @@ func (p *Platform) handleEvent(evt socketmode.Event) {
 					MessageID: ts,
 					ReplyCtx:  replyContext{channel: ev.Channel, timestamp: threadTS},
 				}
+				p.populateWorkspaceChannelKeys(msg, ev.Channel, threadTS)
 				p.handler(p, msg)
 			}
 		}
