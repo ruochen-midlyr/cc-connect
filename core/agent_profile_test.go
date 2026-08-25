@@ -97,3 +97,43 @@ func TestBoundAgentProfileFallsBackWhenProfileIsGone(t *testing.T) {
 		t.Fatalf("boundAgentProfile = %q, want the project default after the profile was removed", got)
 	}
 }
+
+// A chat that switched agents must have its commands resolved against that
+// agent. Before this was wired, /model, /mode and forwarded agent commands all
+// acted on the project default, so a codex chat was told about Claude Code's
+// capabilities and handed Claude Code's command spellings.
+func TestCommandContextUsesTheChatsAgentProfile(t *testing.T) {
+	wsDir := t.TempDir()
+	stateDir := t.TempDir()
+
+	e := &Engine{
+		name:              "p",
+		multiWorkspace:    true,
+		agent:             &stubNamedAgent{name: "claudecode"},
+		sessions:          NewSessionManager(filepath.Join(stateDir, "sessions.json")),
+		projectState:      NewProjectStateStore(filepath.Join(stateDir, "state.json")),
+		workspaceBindings: NewWorkspaceBindingManager(filepath.Join(stateDir, "bindings.json")),
+	}
+	e.SetAgentProfiles([]AgentProfile{{Name: "cdx", Type: "stubagent"}})
+
+	const channelKey = "slack:C1"
+	e.workspaceBindings.Bind("project:p", channelKey, "chan", wsDir)
+
+	// Default: the project's own agent.
+	if got := e.boundAgentProfile(channelKey); got != "" {
+		t.Fatalf("boundAgentProfile = %q, want the project default", got)
+	}
+
+	// After switching, the chat resolves to the profile.
+	e.projectState.SetAgentProfileOverride(channelKey, "cdx")
+	if got := e.boundAgentProfile("slack:C1:t:1", channelKey); got != "cdx" {
+		t.Fatalf("a thread in the channel = %q, want the channel's cdx", got)
+	}
+}
+
+type stubNamedAgent struct {
+	Agent
+	name string
+}
+
+func (s *stubNamedAgent) Name() string { return s.name }

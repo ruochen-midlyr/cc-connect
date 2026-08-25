@@ -16840,7 +16840,11 @@ func (e *Engine) commandContextWithWorkspace(p Platform, msg *Message) (Agent, *
 	if workspace == "" {
 		return e.agent, e.sessions, msg.SessionKey, "", nil
 	}
-	agent, sessions, interactiveKey, effectiveDir, err := e.workspaceContext(workspace, msg.SessionKey)
+	// Resolve under the chat's agent profile. Without this every command —
+	// /model, /mode, /history, and forwarded agent commands — would act on the
+	// project's default agent rather than the one the chat is actually running.
+	profile := e.boundAgentProfile(channelKey, workspaceChannelKey(msg.Platform, MessageChannelID(msg)))
+	agent, sessions, interactiveKey, effectiveDir, err := e.workspaceContextFor(workspace, msg.SessionKey, profile)
 	if err != nil {
 		return nil, nil, "", "", err
 	}
@@ -16850,8 +16854,9 @@ func (e *Engine) commandContextWithWorkspace(p Platform, msg *Message) (Agent, *
 // sessionContextForKey resolves the agent and session manager for a sessionKey.
 // It uses existing workspace bindings and falls back to global context if unresolved.
 func (e *Engine) sessionContextForKey(sessionKey string) (Agent, *SessionManager) {
+	profile := e.boundAgentProfile(extractWorkspaceChannelKey(sessionKey))
 	if workspace := e.sendWorkDirForSession(sessionKey); workspace != "" {
-		if wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgent(workspace); err == nil {
+		if wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgentFor(workspace, profile); err == nil {
 			return wsAgent, wsSessions
 		}
 	}
@@ -16860,7 +16865,7 @@ func (e *Engine) sessionContextForKey(sessionKey string) (Agent, *SessionManager
 	}
 	if channelKey := extractWorkspaceChannelKey(sessionKey); channelKey != "" {
 		if b, _, usable := e.lookupEffectiveWorkspaceBinding(channelKey); usable {
-			if wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgent(normalizeWorkspacePath(b.Workspace)); err == nil {
+			if wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgentFor(normalizeWorkspacePath(b.Workspace), profile); err == nil {
 				return wsAgent, wsSessions
 			}
 		}
@@ -16873,7 +16878,7 @@ func (e *Engine) sessionContextForKey(sessionKey string) (Agent, *SessionManager
 	// returns the workspace-prefixed key, allowing concurrent unlocked sends
 	// to the same agent session.
 	if workspace := e.workspaceFromLiveState(sessionKey); workspace != "" {
-		if wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgent(workspace); err == nil {
+		if wsAgent, wsSessions, err := e.getOrCreateWorkspaceAgentFor(workspace, profile); err == nil {
 			return wsAgent, wsSessions
 		}
 	}
