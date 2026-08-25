@@ -649,6 +649,7 @@ const (
 	MsgWsNotEnabled             MsgKey = "ws_not_enabled"
 	MsgWsNoBinding              MsgKey = "ws_no_binding"
 	MsgWsBindRequired           MsgKey = "ws_bind_required"
+	MsgAgentCommandUnsupported  MsgKey = "agent_command_unsupported"
 	MsgWsAgentUsage             MsgKey = "ws_agent_usage"
 	MsgWsAgentUnknown           MsgKey = "ws_agent_unknown"
 	MsgWsAgentNoProfiles        MsgKey = "ws_agent_no_profiles"
@@ -4068,6 +4069,13 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "OK 已恢復為專案預設 agent，下一則訊息生效。",
 		LangJapanese:           "OK プロジェクト既定のエージェントに戻しました。次のメッセージから有効です。",
 		LangSpanish:            "OK De vuelta al agente predeterminado del proyecto. Surte efecto en el proximo mensaje.",
+	},
+	MsgAgentCommandUnsupported: {
+		LangEnglish:            "`%s` is not available with the `%s` agent here.",
+		LangChinese:            "`%s` 在当前的 `%s` agent 下不可用。",
+		LangTraditionalChinese: "`%s` 在目前的 `%s` agent 下不可用。",
+		LangJapanese:           "`%s` は現在の `%s` エージェントでは利用できません。",
+		LangSpanish:            "`%s` no esta disponible con el agente `%s`.",
 	},
 	MsgWsBindRequired: {
 		LangEnglish:            "No workspace bound here. Send `/workspace bind <name>` (or `/workspace route <absolute-path>`) before sending work.",

@@ -363,7 +363,10 @@ type Engine struct {
 	sharedPlatforms map[Platform]bool
 	// agentProfiles are named agent setups a chat can switch to at runtime,
 	// keyed by lowercased name. See SetAgentProfiles.
-	agentProfiles         map[string]AgentProfile
+	agentProfiles map[string]AgentProfile
+	// agentCommands are chat commands forwarded to the agent, keyed by
+	// lowercased command word. See SetAgentCommands.
+	agentCommands         map[string]AgentCommand
 	sessions              *SessionManager
 	ctx                   context.Context
 	cancel                context.CancelFunc
@@ -1095,6 +1098,73 @@ func (e *Engine) SetModelSaveFunc(fn func(model string) error) {
 // or if the engine is already running, it is started immediately.
 func (e *Engine) AddPlatform(p Platform) {
 	e.platforms = append(e.platforms, p)
+}
+
+// AgentCommand forwards a chat command to the agent, spelled per agent type.
+// For maps an agent type to the text sent to it, with "{args}" standing in for
+// whatever followed the command word.
+type AgentCommand struct {
+	Name string
+	For  map[string]string
+}
+
+// SetAgentCommands installs the commands forwarded to the agent. Command words
+// and agent types are matched case-insensitively.
+func (e *Engine) SetAgentCommands(cmds []AgentCommand) {
+	if len(cmds) == 0 {
+		e.agentCommands = nil
+		return
+	}
+	m := make(map[string]AgentCommand, len(cmds))
+	for _, c := range cmds {
+		name := strings.ToLower(strings.TrimSpace(c.Name))
+		if name == "" {
+			continue
+		}
+		lowered := make(map[string]string, len(c.For))
+		for agentType, text := range c.For {
+			lowered[strings.ToLower(strings.TrimSpace(agentType))] = text
+		}
+		m[name] = AgentCommand{Name: name, For: lowered}
+	}
+	e.agentCommands = m
+}
+
+// resolveAgentCommand renders a forwarded command for an agent type. It reports
+// whether the word is configured at all, separately from whether this agent
+// supports it — an unsupported agent gets an explanation, not the raw text.
+func (e *Engine) resolveAgentCommand(name, agentType, args string) (text string, configured, supported bool) {
+	if len(e.agentCommands) == 0 {
+		return "", false, false
+	}
+	c, ok := e.agentCommands[strings.ToLower(strings.TrimSpace(name))]
+	if !ok {
+		return "", false, false
+	}
+	tmpl, ok := c.For[strings.ToLower(strings.TrimSpace(agentType))]
+	if !ok {
+		return "", true, false
+	}
+	if strings.Contains(tmpl, "{args}") {
+		return strings.TrimSpace(strings.ReplaceAll(tmpl, "{args}", args)), true, true
+	}
+	if args == "" {
+		return tmpl, true, true
+	}
+	return tmpl + " " + args, true, true
+}
+
+// AgentCommandNames lists the configured command words, sorted.
+func (e *Engine) AgentCommandNames() []string {
+	if len(e.agentCommands) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(e.agentCommands))
+	for n := range e.agentCommands {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // AgentProfile is a named agent setup a chat can switch to at runtime.
@@ -3124,8 +3194,12 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 	}
 
 	if len(msg.Images) == 0 && strings.HasPrefix(content, "/") {
-		if e.handleCommand(p, msg, content) {
+		handled, forward := e.handleCommand(p, msg, content)
+		if handled {
 			return
+		}
+		if forward != "" {
+			content = forward
 		}
 		// Unrecognized slash command — fall through to agent as normal message
 	}
@@ -6846,7 +6920,10 @@ func splitCommandArgs(s string) []string {
 	return tokens
 }
 
-func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
+// handleCommand runs a slash command. It reports whether the command was fully
+// handled, and when it was not, the text to forward to the agent — which differs
+// from the input when a configured agent command was rewritten for this agent.
+func (e *Engine) handleCommand(p Platform, msg *Message, raw string) (handled bool, forward string) {
 	parts := splitCommandArgs(raw)
 	cmd := strings.ToLower(strings.TrimPrefix(parts[0], "/"))
 	args := parts[1:]
@@ -6869,7 +6946,7 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 			"user_id", msg.UserID, "platform", msg.Platform,
 			"project", e.name, "command", cmdID, "reason", "disabled")
 		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCommandDisabled), "/"+cmdID))
-		return true
+		return true, ""
 	}
 
 	if cmdID != "" && isPrivilegedCommandInvocation(cmdID, args) && !e.isAdmin(msg.UserID) {
@@ -6877,7 +6954,7 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 			"user_id", msg.UserID, "platform", msg.Platform,
 			"project", e.name, "command", cmdID, "reason", "unauthorized")
 		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgAdminRequired), "/"+cmdID))
-		return true
+		return true, ""
 	}
 
 	if cmdID != "" {
@@ -6970,10 +7047,10 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 	case "workspace":
 		if !e.multiWorkspace {
 			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgWsNotEnabled))
-			return true
+			return true, ""
 		}
 		e.handleWorkspaceCommand(p, msg, args)
-		return true
+		return true, ""
 	case "whoami":
 		e.cmdWhoami(p, msg)
 	case "web":
@@ -6987,13 +7064,13 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 					"user_id", msg.UserID, "platform", msg.Platform,
 					"project", e.name, "command", custom.Name, "reason", "disabled")
 				e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCommandDisabled), "/"+custom.Name))
-				return true
+				return true, ""
 			}
 			slog.Info("audit: command_executed",
 				"user_id", msg.UserID, "platform", msg.Platform,
 				"project", e.name, "command", custom.Name, "type", "custom")
 			e.executeCustomCommand(p, msg, custom, args)
-			return true
+			return true, ""
 		}
 		if skill := e.skills.Resolve(cmd); skill != nil {
 			if disabledCmds[strings.ToLower(skill.Name)] {
@@ -7001,19 +7078,39 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 					"user_id", msg.UserID, "platform", msg.Platform,
 					"project", e.name, "command", skill.Name, "reason", "disabled")
 				e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCommandDisabled), "/"+skill.Name))
-				return true
+				return true, ""
 			}
 			slog.Info("audit: command_executed",
 				"user_id", msg.UserID, "platform", msg.Platform,
 				"project", e.name, "command", skill.Name, "type", "skill")
 			e.executeSkill(p, msg, skill, args)
-			return true
+			return true, ""
 		}
+		// A command the agent itself understands: forward it spelled the way
+		// this agent expects, with no "unknown command" noise in between.
+		if _, configured, _ := e.resolveAgentCommand(cmd, "", ""); configured {
+			// Resolve the chat's own agent: which spelling to use depends on
+			// the agent this chat runs, not the project default.
+			agentType := e.agent.Name()
+			if a, _, _, err := e.commandContext(p, msg); err == nil && a != nil {
+				agentType = a.Name()
+			}
+			text, _, supported := e.resolveAgentCommand(cmd, agentType, strings.Join(args, " "))
+			if !supported {
+				e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgAgentCommandUnsupported, "/"+cmd, agentType))
+				return true, ""
+			}
+			slog.Info("audit: command_executed",
+				"user_id", msg.UserID, "platform", msg.Platform,
+				"project", e.name, "command", cmd, "type", "agent", "agent", agentType)
+			return false, text
+		}
+
 		// Not a cc-connect command — notify user, then fall through to agent
 		e.send(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgUnknownCommand), "/"+cmd))
-		return false
+		return false, ""
 	}
-	return true
+	return true, ""
 }
 
 func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string) {

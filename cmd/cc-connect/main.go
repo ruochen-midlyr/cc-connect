@@ -442,6 +442,15 @@ func main() {
 			engine.SetAgentProfiles(profiles)
 		}
 
+		// Chat commands the agent itself understands, spelled per agent type.
+		if len(cfg.AgentCommands) > 0 {
+			cmds := make([]core.AgentCommand, 0, len(cfg.AgentCommands))
+			for _, ac := range cfg.AgentCommands {
+				cmds = append(cmds, core.AgentCommand{Name: ac.Name, For: ac.For})
+			}
+			engine.SetAgentCommands(cmds)
+		}
+
 		// Attach a shared connection, if this project receives from one, and
 		// claim the channels it answers in.
 		if ref := strings.TrimSpace(proj.PlatformRef); ref != "" {

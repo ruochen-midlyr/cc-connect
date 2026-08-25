@@ -60,7 +60,7 @@ func TestHandleCommand_CommandsAddexecBlocksNonAdmin(t *testing.T) {
 	e.SetAdminFrom("") // no admins → addexec must be denied for everyone
 
 	msg := &Message{UserID: "u", Platform: "test", ReplyCtx: "rctx"}
-	handled := e.handleCommand(p, msg, "/commands addexec foo bar")
+	handled, _ := e.handleCommand(p, msg, "/commands addexec foo bar")
 	if !handled {
 		t.Fatal("addexec invocation must be intercepted, not forwarded to agent")
 	}
@@ -76,7 +76,7 @@ func TestHandleCommand_CommandsListNoAdmin(t *testing.T) {
 	e.SetAdminFrom("")
 
 	msg := &Message{UserID: "u", Platform: "test", ReplyCtx: "rctx"}
-	handled := e.handleCommand(p, msg, "/commands list")
+	handled, _ := e.handleCommand(p, msg, "/commands list")
 	if !handled {
 		t.Fatal("/commands list must be handled by cc-connect")
 	}
@@ -94,7 +94,7 @@ func TestHandleCommand_CronAddexecBlocksNonAdmin(t *testing.T) {
 	e.SetAdminFrom("")
 
 	msg := &Message{UserID: "u", Platform: "test", ReplyCtx: "rctx"}
-	handled := e.handleCommand(p, msg, "/cron addexec daily echo hi")
+	handled, _ := e.handleCommand(p, msg, "/cron addexec daily echo hi")
 	if !handled {
 		t.Fatal("cron addexec must be intercepted")
 	}

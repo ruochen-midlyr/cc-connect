@@ -93,6 +93,7 @@ type Config struct {
 	ProviderPresetsURL string                  `toml:"provider_presets_url,omitempty"` // remote JSON URL for provider presets
 	SharedPlatforms    []SharedPlatformConfig  `toml:"shared_platforms"`               // platform connections shared by several projects
 	AgentProfiles      []AgentProfileConfig    `toml:"agent_profiles"`                 // named agent setups selectable per chat
+	AgentCommands      []AgentCommandConfig    `toml:"agent_commands"`                 // chat commands forwarded to the agent, per agent type
 	Projects           []ProjectConfig         `toml:"projects"`
 	Commands           []CommandConfig         `toml:"commands"`     // global custom slash commands
 	Aliases            []AliasConfig           `toml:"aliases"`      // global command aliases
@@ -604,6 +605,23 @@ type CodexProviderConfig struct {
 type PlatformConfig struct {
 	Type    string         `toml:"type"`
 	Options map[string]any `toml:"options"`
+}
+
+// AgentCommandConfig forwards a chat command to the agent, spelled the way the
+// agent in use understands it.
+//
+// Coding CLIs have their own in-session commands — Claude Code's /goal and
+// /loop, for instance — and cc-connect otherwise answers "unknown command"
+// before passing the text through. Declaring one here suppresses that and lets
+// a single word mean the right thing whichever agent the chat is running.
+type AgentCommandConfig struct {
+	// Name is the command word, without a leading slash.
+	Name string `toml:"name"`
+	// For maps an agent type ("claudecode", "codex", ...) to the text sent to
+	// that agent. "{args}" is replaced with whatever followed the command.
+	// An agent type that is absent does not support the command, and the chat
+	// is told so rather than being handed text the agent cannot act on.
+	For map[string]string `toml:"for"`
 }
 
 // AgentProfileConfig is a named agent setup a chat can switch to at runtime via

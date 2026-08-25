@@ -684,6 +684,48 @@ level = "info" # debug, info, warn, error
 #
 
 # =============================================================================
+# Agent Commands / 转发给 Agent 的命令
+# =============================================================================
+# Chat commands the agent itself understands, spelled the way the agent in use
+# expects. Without this cc-connect answers "unknown command" before passing the
+# text through; declaring one here suppresses that and lets a single word mean
+# the right thing whichever agent the chat is running.
+# 聊天中直接转发给 agent 的命令，按当前 agent 的写法翻译。未声明时 cc-connect 会先回
+# 一句"未知命令"再透传；声明后不再有这句噪音，而且同一个词在不同 agent 下会翻译成
+# 各自正确的形式。
+#
+# "{args}" is replaced with whatever followed the command word. An agent type
+# that is absent does not support the command, and the chat is told so rather
+# than being handed text the agent cannot act on.
+# "{args}" 会被替换为命令后面的内容。未列出的 agent 类型视为不支持该命令，会明确告知
+# 用户，而不是把 agent 无法处理的文本丢过去。
+#
+# [[agent_commands]]
+# name = "goal"
+# [agent_commands.for]
+# claudecode = "/goal {args}"     # codex omitted: it has no equivalent / 未列 codex：它没有对应功能
+#
+# [[agent_commands]]
+# name = "loop"
+# [agent_commands.for]
+# claudecode = "/loop {args}"
+#
+# Pair these with [[aliases]] so they can be typed as plain text, which is the
+# only form that keeps thread context on Slack:
+# 配合 [[aliases]] 使用，让它们可以作为普通文本输入 —— 在 Slack 上这是唯一能保留
+# 话题上下文的形式：
+#
+# [[aliases]]
+# name = "goal"
+# command = "/goal"
+#
+# Caveat: Claude Code keeps /goal and /loop state in the agent process, so both
+# end when that process does — a restart, or an idle agent being reaped. For
+# schedules that must survive restarts use cc-connect's own cron.
+# 注意：Claude Code 的 /goal 和 /loop 状态存在 agent 进程内存里，进程结束（重启、
+# 空闲回收）即失效。需要跨重启存活的定时任务请用 cc-connect 自带的 cron。
+
+# =============================================================================
 # Agent Profiles / 命名 Agent 配置
 # =============================================================================
 # Named agent setups a chat switches to with `/workspace set-agent <name>`, so
