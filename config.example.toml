@@ -703,12 +703,13 @@ level = "info" # debug, info, warn, error
 # [[agent_commands]]
 # name = "goal"
 # [agent_commands.for]
-# claudecode = "/goal {args}"     # codex omitted: it has no equivalent / 未列 codex：它没有对应功能
+# claudecode = "/goal {args}"
+# codex = "/goal {args}"          # same spelling here, but that is not a given / 这里写法相同，但并非总是如此
 #
 # [[agent_commands]]
 # name = "loop"
 # [agent_commands.for]
-# claudecode = "/loop {args}"
+# claudecode = "/loop {args}"     # codex omitted: it has no loop / 未列 codex：它没有 loop
 #
 # Pair these with [[aliases]] so they can be typed as plain text, which is the
 # only form that keeps thread context on Slack:
