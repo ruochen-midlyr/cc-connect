@@ -666,6 +666,19 @@ level = "info" # debug, info, warn, error
 # [[aliases]]
 # name = "帮助"
 # command = "/help"
+#
+# An alias normally also matches the first word, carrying the rest along as
+# arguments. Set exact = true for a trigger that is also an ordinary word, so it
+# only fires when the message is nothing else — "stop" interrupts the turn while
+# "stop writing code" reaches the agent as speech.
+# 别名默认也会匹配首词，并把其余内容作为参数传下去。若触发词本身是常用词，设置
+# exact = true，使其仅在整条消息就是该词时生效 —— "stop" 中断当前任务，而
+# "stop writing code" 会原样发给 agent。
+#
+# [[aliases]]
+# name = "stop"
+# command = "/stop"
+# exact = true
 
 # [[aliases]]
 # name = "新建"

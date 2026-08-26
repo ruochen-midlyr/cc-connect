@@ -570,7 +570,11 @@ func main() {
 
 		// Wire global aliases
 		for _, a := range cfg.Aliases {
-			engine.AddAlias(a.Name, a.Command)
+			if a.Exact {
+				engine.AddExactAlias(a.Name, a.Command)
+			} else {
+				engine.AddAlias(a.Name, a.Command)
+			}
 		}
 		engine.SetAliasSaveAddFunc(func(name, command string) error {
 			return config.AddAlias(config.AliasConfig{Name: name, Command: command})
@@ -1912,7 +1916,11 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 	// Reload aliases
 	engine.ClearAliases()
 	for _, a := range cfg.Aliases {
-		engine.AddAlias(a.Name, a.Command)
+		if a.Exact {
+			engine.AddExactAlias(a.Name, a.Command)
+		} else {
+			engine.AddAlias(a.Name, a.Command)
+		}
 	}
 
 	// Reload banned words

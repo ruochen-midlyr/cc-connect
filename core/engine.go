@@ -402,7 +402,9 @@ type Engine struct {
 	commands *CommandRegistry
 	skills   *SkillRegistry
 	aliases  map[string]string // trigger → command (e.g. "帮助" → "/help")
-	aliasMu  sync.RWMutex
+	// aliasExact marks triggers that only fire on an exact whole-message match.
+	aliasExact map[string]bool
+	aliasMu    sync.RWMutex
 
 	aliasSaveAddFunc func(name, command string) error
 	aliasSaveDelFunc func(name string) error
@@ -776,6 +778,7 @@ func NewEngine(name string, ag Agent, platforms []Platform, sessionStorePath str
 		commands:              NewCommandRegistry(),
 		skills:                NewSkillRegistry(),
 		aliases:               make(map[string]string),
+		aliasExact:            make(map[string]bool),
 		interactiveStates:     make(map[string]*interactiveState),
 		closingSessions:       make(map[string]chan struct{}),
 		unsafeResume:          make(map[string]bool),
@@ -1340,11 +1343,31 @@ func (e *Engine) ClearCommands(source string) {
 	e.commands.ClearSource(source)
 }
 
-// AddAlias registers a command alias.
+// AddAlias registers a command alias that also matches as a first word,
+// carrying the rest of the message along as arguments.
 func (e *Engine) AddAlias(name, command string) {
+	e.addAlias(name, command, false)
+}
+
+// AddExactAlias registers a command alias that fires only when the message is
+// exactly the trigger. Use it for a trigger that is also an ordinary word, so
+// "stop" interrupts the turn while "stop doing X" reaches the agent as speech.
+func (e *Engine) AddExactAlias(name, command string) {
+	e.addAlias(name, command, true)
+}
+
+func (e *Engine) addAlias(name, command string, exact bool) {
 	e.aliasMu.Lock()
 	defer e.aliasMu.Unlock()
 	e.aliases[name] = command
+	if e.aliasExact == nil {
+		e.aliasExact = make(map[string]bool)
+	}
+	if exact {
+		e.aliasExact[name] = true
+	} else {
+		delete(e.aliasExact, name)
+	}
 }
 
 func (e *Engine) SetAliasSaveAddFunc(fn func(name, command string) error) {
@@ -1360,6 +1383,7 @@ func (e *Engine) ClearAliases() {
 	e.aliasMu.Lock()
 	defer e.aliasMu.Unlock()
 	e.aliases = make(map[string]string)
+	e.aliasExact = make(map[string]bool)
 }
 
 // resolveDisabledCmds resolves a list of command names (including "*" wildcard)
@@ -2719,9 +2743,10 @@ func (e *Engine) resolveAlias(content string) string {
 		return cmd
 	}
 
-	// Match first word, append remaining args
+	// Match first word, append remaining args — unless the alias is exact-only,
+	// in which case the extra words mean the user was talking, not commanding.
 	parts := strings.SplitN(content, " ", 2)
-	if cmd, ok := e.aliases[parts[0]]; ok {
+	if cmd, ok := e.aliases[parts[0]]; ok && !e.aliasExact[parts[0]] {
 		if len(parts) > 1 {
 			return cmd + " " + parts[1]
 		}

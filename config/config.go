@@ -661,6 +661,12 @@ type SharedPlatformConfig struct {
 type AliasConfig struct {
 	Name    string `toml:"name"`    // trigger text (e.g. "帮助")
 	Command string `toml:"command"` // target command (e.g. "/help")
+	// Exact restricts the alias to a message that is exactly the trigger.
+	// By default an alias also matches the first word and carries the rest
+	// along as arguments, which is wrong for a trigger that doubles as an
+	// ordinary word: "stop" should interrupt the turn, while "stop doing X"
+	// is something the user is saying to the agent.
+	Exact bool `toml:"exact,omitempty"`
 }
 
 // CommandConfig defines a user-customizable slash command that expands a prompt template or executes a shell command.
