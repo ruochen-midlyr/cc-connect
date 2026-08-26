@@ -563,11 +563,16 @@ type interactiveState struct {
 	approveAll               bool            // when true, auto-approve all permission requests for this session
 	fromVoice                bool            // true if current turn originated from voice transcription
 	sideText                 string
-	deleteMode               *deleteModeState
-	modelSwitch              *modelSwitchState
-	pendingProviderAdd       *pendingProviderAddState
-	lastAutoCompressAt       time.Time
-	lastAutoCompressTokens   int
+	// lastForegroundResponse is the final text the last user-facing turn
+	// delivered. The unsolicited reader compares against it so a continuation
+	// that re-emits the same result — Claude Code's /goal does this when its
+	// stop hook resumes the turn — is not posted to the chat twice.
+	lastForegroundResponse string
+	deleteMode             *deleteModeState
+	modelSwitch            *modelSwitchState
+	pendingProviderAdd     *pendingProviderAddState
+	lastAutoCompressAt     time.Time
+	lastAutoCompressTokens int
 
 	// Unsolicited event reader: a background goroutine that consumes agent
 	// events between user-initiated turns (e.g. background task completions).
@@ -5122,7 +5127,21 @@ func (e *Engine) runUnsolicitedReader(ctx context.Context, cancel context.Cancel
 					fullResponse = strings.Join(textParts, "")
 				}
 
-				if fullResponse != "" {
+				// An agent that resumes a turn after signalling completion —
+				// Claude Code does this when a /goal stop hook fires — emits a
+				// second result carrying the text already delivered. Posting it
+				// again shows the user the same answer twice.
+				state.mu.Lock()
+				alreadyDelivered := fullResponse != "" && fullResponse == state.lastForegroundResponse
+				if alreadyDelivered {
+					state.lastForegroundResponse = ""
+				}
+				state.mu.Unlock()
+
+				if alreadyDelivered {
+					slog.Info("unsolicited result repeats the delivered response, not resending",
+						"session", sessionKey, "response_len", len(fullResponse))
+				} else if fullResponse != "" {
 					for _, chunk := range SplitMessageCodeFenceAware(fullResponse, maxPlatformMessageLen) {
 						e.send(p, replyCtx, chunk)
 					}
@@ -5135,8 +5154,13 @@ func (e *Engine) runUnsolicitedReader(ctx context.Context, cancel context.Cancel
 				// takes event-channel ownership) blocks until this goroutine
 				// exits — so a foreground AddHistory is always ordered after
 				// any unsolicited AddHistory.
-				session.AddHistory("assistant", fullResponse)
-				sessions.Save()
+				// Skip history too: the foreground turn already recorded this
+				// exact text, and a second entry would show the agent saying
+				// the same thing twice on its next resume.
+				if !alreadyDelivered {
+					session.AddHistory("assistant", fullResponse)
+					sessions.Save()
+				}
 
 				// Reset for potential subsequent unsolicited turn.
 				textParts = nil
@@ -6125,6 +6149,10 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				}
 			}
 			fullResponse = cleanResponse
+
+			state.mu.Lock()
+			state.lastForegroundResponse = fullResponse
+			state.mu.Unlock()
 
 			turnDuration := time.Since(turnStart)
 			slog.Info("turn complete",
