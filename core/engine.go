@@ -6302,10 +6302,18 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						return
 					}
 				}
-			} else if toolCount > 0 && segmentStart > 0 {
-				// When tool calls happened and prior text was already surfaced in segments,
-				// only send the unsent remainder. When tool progress is hidden, tool events don't surface
-				// side-channel messages and segmentStart stays 0, so keep normal finalize flow.
+			} else if segmentStart > 0 && !sp.canPreview() {
+				// Text before segmentStart has already been posted as its own
+				// message, so only the remainder is still owed.
+				//
+				// What advances segmentStart is not only tool progress: with
+				// thinking hidden, compact mode flushes a segment on every
+				// thinking event too. Keying this on a tool call therefore
+				// missed replies that used no tools, and posted their text a
+				// second time.
+				//
+				// A live preview is the exception: its text is not delivered
+				// until the card is finalized, so that path must still run.
 				sp.discard()
 				if segmentStart < len(textParts) {
 					unsent := strings.Join(textParts[segmentStart:], "")
