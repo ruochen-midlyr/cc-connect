@@ -93,6 +93,9 @@ const (
 	messageRecallPollInterval  = 2 * time.Second
 	messageRecallProbeCooldown = time.Minute
 	recalledStopLockWait       = 2 * time.Second
+	// stopFollowUpWait bounds how long a "stop <message>" waits for the halted
+	// turn to release the session before sending the follow-up regardless.
+	stopFollowUpWait = 10 * time.Second
 )
 
 // VersionInfo is set by main at startup so that /version works.
@@ -1357,6 +1360,12 @@ func (e *Engine) AddExactAlias(name, command string) {
 }
 
 func (e *Engine) addAlias(name, command string, exact bool) {
+	// Stored lowercased so lookup can be case-insensitive regardless of how the
+	// trigger was written in config or by /alias add.
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return
+	}
 	e.aliasMu.Lock()
 	defer e.aliasMu.Unlock()
 	e.aliases[name] = command
@@ -2738,15 +2747,21 @@ func (e *Engine) resolveAlias(content string) string {
 		return content
 	}
 
+	// Triggers are matched case-insensitively: a word typed at the start of a
+	// sentence is routinely capitalised, and "Stop" plainly means the same as
+	// "stop".
+	lower := strings.ToLower(content)
+
 	// Exact match on full content
-	if cmd, ok := e.aliases[content]; ok {
+	if cmd, ok := e.aliases[lower]; ok {
 		return cmd
 	}
 
 	// Match first word, append remaining args — unless the alias is exact-only,
 	// in which case the extra words mean the user was talking, not commanding.
 	parts := strings.SplitN(content, " ", 2)
-	if cmd, ok := e.aliases[parts[0]]; ok && !e.aliasExact[parts[0]] {
+	head := strings.ToLower(parts[0])
+	if cmd, ok := e.aliases[head]; ok && !e.aliasExact[head] {
 		if len(parts) > 1 {
 			return cmd + " " + parts[1]
 		}
@@ -7066,7 +7081,7 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) (handled bo
 	case "compress":
 		e.cmdCompress(p, msg)
 	case "stop":
-		e.cmdStop(p, msg)
+		e.cmdStop(p, msg, args)
 	case "cancel":
 		e.cmdCancel(p, msg)
 	case "help":
@@ -10647,7 +10662,60 @@ func (e *Engine) cmdTTS(p Platform, msg *Message, args []string) {
 	}
 }
 
-func (e *Engine) cmdStop(p Platform, msg *Message) {
+// cmdStop halts the running turn. Anything after the command is then sent as a
+// fresh message, so a user who sees the agent going the wrong way can redirect
+// it in one go — "stop, do X instead" — rather than interrupting and then
+// waiting to type again.
+func (e *Engine) cmdStop(p Platform, msg *Message, args []string) {
+	followUp := strings.TrimSpace(strings.Join(args, " "))
+	if followUp != "" {
+		defer e.dispatchAfterStop(p, msg, followUp)
+	}
+	e.cmdStopOnly(p, msg)
+}
+
+// dispatchAfterStop waits for the halted turn to release the session, then
+// feeds the follow-up in as a new message.
+//
+// It runs detached because the caller is still inside the turn's own call
+// stack: the goroutine that owns the session lock only releases it as it
+// unwinds, so waiting inline would deadlock. Without the wait the follow-up
+// would land while the session still looks busy and be queued behind the very
+// turn it was meant to replace.
+func (e *Engine) dispatchAfterStop(p Platform, msg *Message, followUp string) {
+	_, sessions, _, err := e.commandContext(p, msg)
+	if err != nil || sessions == nil {
+		slog.Warn("stop: cannot resolve sessions for follow-up, dropping it",
+			"session", msg.SessionKey, "error", err)
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgStopFollowUpDropped))
+		return
+	}
+	session := sessions.GetOrCreateActive(msg.SessionKey)
+
+	go func() {
+		deadline := time.Now().Add(stopFollowUpWait)
+		for session.Busy() {
+			if time.Now().After(deadline) {
+				slog.Warn("stop: session still busy, sending follow-up anyway",
+					"session", msg.SessionKey, "waited", stopFollowUpWait)
+				break
+			}
+			select {
+			case <-e.ctx.Done():
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+
+		followUpMsg := *msg
+		followUpMsg.Content = followUp
+		slog.Info("stop: dispatching follow-up message",
+			"session", msg.SessionKey, "content_len", len(followUp))
+		e.handleMessage(p, &followUpMsg)
+	}()
+}
+
+func (e *Engine) cmdStopOnly(p Platform, msg *Message) {
 	// /stop only tears down the live agent process; it preserves the stored
 	// AgentSessionID so the next message can --resume the conversation. This
 	// matches the card-button stop path (see executeCardAction "/stop"). The
@@ -15916,12 +15984,14 @@ func (e *Engine) cmdAliasDel(p Platform, msg *Message, args []string) {
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgAliasUsage))
 		return
 	}
-	name := args[0]
+	// Lowercased to match how addAlias stores triggers.
+	name := strings.ToLower(strings.TrimSpace(args[0]))
 
 	e.aliasMu.Lock()
 	_, exists := e.aliases[name]
 	if exists {
 		delete(e.aliases, name)
+		delete(e.aliasExact, name)
 	}
 	e.aliasMu.Unlock()
 

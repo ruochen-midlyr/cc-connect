@@ -2,30 +2,39 @@ package core
 
 import "testing"
 
-// An alias normally matches the first word and carries the rest along as
-// arguments. That is wrong for a trigger that is also an ordinary word: "stop"
-// should interrupt the turn, but "stop writing code" is the user talking to the
-// agent and must reach it verbatim.
-func TestResolveAliasExact(t *testing.T) {
+func newAliasEngine() *Engine {
 	e := &Engine{
 		aliases:    make(map[string]string),
 		aliasExact: make(map[string]bool),
 	}
-	e.AddExactAlias("stop", "/stop")
+	e.AddAlias("stop", "/stop")
 	e.AddAlias("bind", "/workspace bind")
+	return e
+}
+
+// "stop <message>" halts the running turn and redirects it in one go, so the
+// trigger has to keep the rest of the line as arguments. Capitalisation is
+// incidental — a word at the start of a sentence is routinely capitalised.
+func TestResolveAliasStop(t *testing.T) {
+	e := newAliasEngine()
 
 	cases := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"exact trigger fires", "stop", "/stop"},
-		{"trigger with trailing words is left alone", "stop writing code", "stop writing code"},
-		{"trigger as a prefix of a word is left alone", "stopwatch", "stopwatch"},
-		{"trigger inside a sentence is left alone", "please stop", "please stop"},
-		{"a normal alias still takes arguments", "bind gtm-6", "/workspace bind gtm-6"},
-		{"a normal alias still fires bare", "bind", "/workspace bind"},
-		{"unrelated text passes through", "hello there", "hello there"},
+		{"bare trigger", "stop", "/stop"},
+		{"trigger carries the follow-up", "stop write the design doc instead", "/stop write the design doc instead"},
+		{"capitalised", "Stop", "/stop"},
+		{"shouted", "STOP", "/stop"},
+		{"capitalised with follow-up", "Stop do X instead", "/stop do X instead"},
+		{"another alias still works", "bind gtm-6", "/workspace bind gtm-6"},
+		{"mixed case on another alias", "BIND gtm-6", "/workspace bind gtm-6"},
+
+		// Only the first word triggers, so ordinary sentences are untouched.
+		{"trigger mid-sentence", "please stop", "please stop"},
+		{"trigger as a word prefix", "stopwatch settings", "stopwatch settings"},
+		{"unrelated text", "hello there", "hello there"},
 	}
 
 	for _, c := range cases {
@@ -37,26 +46,36 @@ func TestResolveAliasExact(t *testing.T) {
 	}
 }
 
-// Re-registering a trigger must carry the new matching rule, so a reload that
-// flips the flag does not leave the old behaviour behind.
-func TestAliasExactFlagIsReplaced(t *testing.T) {
-	e := &Engine{
-		aliases:    make(map[string]string),
-		aliasExact: make(map[string]bool),
-	}
+// Registration and removal both normalise, so a trigger written with capitals
+// in config or via /alias behaves the same as a lowercase one.
+func TestAliasRegistrationIsCaseInsensitive(t *testing.T) {
+	e := newAliasEngine()
+	e.AddAlias("SHIP", "/deploy")
 
-	e.AddExactAlias("stop", "/stop")
-	if got := e.resolveAlias("stop now"); got != "stop now" {
-		t.Fatalf("exact alias should ignore trailing words, got %q", got)
-	}
-
-	e.AddAlias("stop", "/stop")
-	if got := e.resolveAlias("stop now"); got != "/stop now" {
-		t.Fatalf("after re-registering as non-exact, got %q, want /stop now", got)
+	for _, in := range []string{"ship", "Ship", "SHIP"} {
+		if got := e.resolveAlias(in); got != "/deploy" {
+			t.Errorf("resolveAlias(%q) = %q, want /deploy", in, got)
+		}
 	}
 
 	e.ClearAliases()
 	if got := e.resolveAlias("stop"); got != "stop" {
 		t.Fatalf("cleared aliases should not resolve, got %q", got)
+	}
+}
+
+// exact = true stays available for a trigger that should never take arguments.
+func TestResolveAliasExactStillSupported(t *testing.T) {
+	e := &Engine{
+		aliases:    make(map[string]string),
+		aliasExact: make(map[string]bool),
+	}
+	e.AddExactAlias("ping", "/status")
+
+	if got := e.resolveAlias("Ping"); got != "/status" {
+		t.Errorf("exact alias should match case-insensitively, got %q", got)
+	}
+	if got := e.resolveAlias("ping the server"); got != "ping the server" {
+		t.Errorf("exact alias must ignore trailing words, got %q", got)
 	}
 }

@@ -676,9 +676,19 @@ level = "info" # debug, info, warn, error
 # "stop writing code" 会原样发给 agent。
 #
 # [[aliases]]
+# name = "ping"
+# command = "/status"
+# exact = true
+#
+# /stop is the opposite case: "stop <message>" halts the running turn and then
+# sends the rest as a new one, so a wrong turn can be redirected in a single
+# message. Leave exact unset for it.
+# /stop 属于相反的情况："stop <消息>" 会中断当前任务，并把其余内容作为新消息发出，
+# 于是跑偏的任务可以用一条消息纠正。这个别名不要设 exact。
+#
+# [[aliases]]
 # name = "stop"
 # command = "/stop"
-# exact = true
 
 # [[aliases]]
 # name = "新建"

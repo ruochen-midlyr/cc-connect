@@ -7838,7 +7838,7 @@ func TestCmdStop_PreservesAgentSessionID(t *testing.T) {
 
 	// Simulate /stop: it uses interactiveKeyForSessionKey internally.
 	msg := &Message{SessionKey: key, ReplyCtx: "ctx"}
-	e.cmdStop(p, msg)
+	e.cmdStop(p, msg, nil)
 
 	// After /stop, AgentSessionID must be preserved so the next message can
 	// --resume the conversation (matching the card-button stop path).
@@ -10419,7 +10419,7 @@ func TestCmdStop_ReturnsWhileCloseBlockedAndStopsEventLoop(t *testing.T) {
 
 	stopDone := make(chan struct{})
 	go func() {
-		e.cmdStop(p, &Message{SessionKey: key, ReplyCtx: "ctx"})
+		e.cmdStop(p, &Message{SessionKey: key, ReplyCtx: "ctx"}, nil)
 		close(stopDone)
 	}()
 
@@ -10738,7 +10738,7 @@ func TestCmdStop_UsesInteractiveKeyForMultiWorkspace(t *testing.T) {
 	e.interactiveMu.Unlock()
 
 	msg := &Message{SessionKey: wsKey, Content: "/stop", ReplyCtx: "ctx"}
-	e.cmdStop(p, msg)
+	e.cmdStop(p, msg, nil)
 
 	e.interactiveMu.Lock()
 	_, exists := e.interactiveStates[iKey]

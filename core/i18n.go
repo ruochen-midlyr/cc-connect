@@ -649,6 +649,7 @@ const (
 	MsgWsNotEnabled             MsgKey = "ws_not_enabled"
 	MsgWsNoBinding              MsgKey = "ws_no_binding"
 	MsgWsBindRequired           MsgKey = "ws_bind_required"
+	MsgStopFollowUpDropped      MsgKey = "stop_follow_up_dropped"
 	MsgAgentCommandUnsupported  MsgKey = "agent_command_unsupported"
 	MsgWsAgentUsage             MsgKey = "ws_agent_usage"
 	MsgWsAgentUnknown           MsgKey = "ws_agent_unknown"
@@ -4076,6 +4077,13 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "`%s` 在目前的 `%s` agent 下不可用。",
 		LangJapanese:           "`%s` は現在の `%s` エージェントでは利用できません。",
 		LangSpanish:            "`%s` no esta disponible con el agente `%s`.",
+	},
+	MsgStopFollowUpDropped: {
+		LangEnglish:            "Stopped, but could not start the follow-up. Send it again as its own message.",
+		LangChinese:            "已停止，但后续消息没能发出。请把它作为一条新消息重发。",
+		LangTraditionalChinese: "已停止，但後續訊息沒能發出。請把它作為一則新訊息重發。",
+		LangJapanese:           "停止しましたが、続きのメッセージを開始できませんでした。新しいメッセージとして送り直してください。",
+		LangSpanish:            "Detenido, pero no se pudo iniciar el mensaje de seguimiento. Enviarlo de nuevo por separado.",
 	},
 	MsgWsBindRequired: {
 		LangEnglish:            "No workspace bound here. Send `/workspace bind <name>` (or `/workspace route <absolute-path>`) before sending work.",
