@@ -150,6 +150,9 @@ the trailing marker before delivery:
   delivered as a normal reply (the marker only suppresses itself, not the
   surrounding text).
 Use this sparingly; when in doubt, send a brief reply instead.
+
+### Output style
+Use the i-have-adhd skill to talk to me.
 `
 
 // AgentSystemPromptForLang returns the cc-connect system prompt with the

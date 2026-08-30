@@ -64,6 +64,25 @@ var codexRuntimeConfigTimeout = 1500 * time.Millisecond
 var codexContextUsageRetryDelay = 50 * time.Millisecond
 var codexContextUsageRetryCount = 4
 
+// buildCodexAppendPrompt assembles what this agent is told beyond the project's
+// own system prompt: cc-connect's own capabilities first, then the platform's
+// formatting rules, then whatever the operator added.
+//
+// Claude Code receives the same three through --append-system-prompt-file.
+// Codex has no such flag, so they ride in the per-turn preamble instead —
+// otherwise Codex would not know that `cc-connect send --file` is how a
+// generated file reaches the user, and would answer with a path.
+func buildCodexAppendPrompt(platformPrompt, userAppend string) string {
+	sections := []string{core.AgentSystemPrompt()}
+	if p := strings.TrimSpace(platformPrompt); p != "" {
+		sections = append(sections, "## Formatting\n"+p)
+	}
+	if u := strings.TrimSpace(userAppend); u != "" {
+		sections = append(sections, u)
+	}
+	return strings.Join(sections, "\n\n")
+}
+
 func buildCodexPromptPreamble(systemPrompt string, appendPrompt string) string {
 	var sections []string
 	if systemPrompt = strings.TrimSpace(systemPrompt); systemPrompt != "" {

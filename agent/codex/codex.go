@@ -43,6 +43,7 @@ type Agent struct {
 	codexHome       string
 	systemPrompt    string
 	appendPrompt    string
+	platformPrompt  string
 	cmd             string   // CLI binary name, default "codex"
 	cliExtraArgs    []string // extra args parsed from cmd after the binary
 	providers       []core.ProviderConfig
@@ -174,6 +175,16 @@ func (a *Agent) GetWorkDir() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.workDir
+}
+
+// SetPlatformPrompt implements core.PlatformPromptInjector so this agent
+// receives the platform's formatting guidance — Slack's mrkdwn rules, say —
+// the same way Claude Code does. Without it the two agents answer into the
+// same channel under different rules.
+func (a *Agent) SetPlatformPrompt(prompt string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.platformPrompt = prompt
 }
 
 func (a *Agent) SetModel(model string) {
@@ -471,7 +482,7 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 	appServerURL := a.appServerURL
 	codexHome := a.codexHome
 	systemPrompt := a.systemPrompt
-	appendPrompt := a.appendPrompt
+	appendPrompt := buildCodexAppendPrompt(a.platformPrompt, a.appendPrompt)
 	cliBin := a.cmd
 	cliExtraArgs := a.cliExtraArgs
 	workDir := a.workDir
