@@ -12431,6 +12431,7 @@ func (e *Engine) sendWithError(p Platform, replyCtx any, content string) error {
 }
 
 func (e *Engine) sendAlreadyRenderedWithError(p Platform, replyCtx any, content string) error {
+	logOutbound("send", p.Name(), content)
 	start := time.Now()
 	if err := p.Send(e.ctx, replyCtx, content); err != nil {
 		// Check for context_token missing error (common for Weixin platform)
@@ -12495,6 +12496,7 @@ func (e *Engine) replyWithError(p Platform, replyCtx any, content string) error 
 		slog.Warn("outgoing rate limit: context cancelled", "platform", p.Name(), "error", err)
 		return err
 	}
+	logOutbound("reply", p.Name(), content)
 	start := time.Now()
 	if err := p.Reply(e.ctx, replyCtx, content); err != nil {
 		slog.Error("platform reply failed", "platform", p.Name(), "error", err, "content_len", len(content))

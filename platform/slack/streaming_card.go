@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,6 +62,15 @@ func (p *Platform) CreateStreamingCard(ctx context.Context, rctx any) (core.Stre
 // card, or the "too long for chat.update" overflow path used by Finalize.
 // Caller must hold c.mu.
 func (c *slackStreamingCard) postFresh(ctx context.Context, rendered string) (string, error) {
+	// TEMPORARY DIAGNOSTIC — see core/outbound_trace.go.
+	head := rendered
+	if len(head) > 60 {
+		head = head[:60]
+	}
+	slog.Info("outbound", "kind", "card.postFresh", "platform", "slack",
+		"len", len(rendered), "head", strings.ReplaceAll(head, "\n", "\\n"),
+		"had_ts", c.ts != "")
+
 	opts := []slack.MsgOption{slack.MsgOptionText(rendered, false)}
 	if c.threadTS != "" {
 		opts = append(opts, slack.MsgOptionPostMessageParameters(slack.PostMessageParameters{ThreadTimestamp: c.threadTS}))
