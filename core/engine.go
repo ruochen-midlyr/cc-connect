@@ -339,8 +339,12 @@ type DisplayCfg struct {
 	ThinkingMaxLen   int // max runes for thinking preview; 0 = no truncation
 	ToolMaxLen       int // max runes for tool use preview; 0 = no truncation
 	ToolMessages     bool
-	HistoryMaxLen    *int // max runes for /history entries; nil = default, 0 = no truncation
-	HideAgentFooter  bool // strip model/token footer lines emitted as agent text
+	// HideToolDetails drops the input and result of a shown tool call, leaving
+	// the tool name alone — enough to follow what the agent is doing without the
+	// payloads that make a turn unreadable. Zero value keeps full detail.
+	HideToolDetails bool
+	HistoryMaxLen   *int // max runes for /history entries; nil = default, 0 = no truncation
+	HideAgentFooter bool // strip model/token footer lines emitted as agent text
 }
 
 // InstantReplyCfg controls the immediate confirmation reply sent when a message
@@ -5638,6 +5642,12 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 
 		case EventToolUse:
 			toolCount++
+			// One decision for every render path below: when tool details are
+			// off, the tool call is carried by its name alone.
+			shownToolInput := event.ToolInput
+			if e.display.HideToolDetails {
+				shownToolInput = ""
+			}
 			if hasRichCard {
 				// When tool messages are suppressed, skip card updates on tool events.
 				if !e.display.ToolMessages {
@@ -5646,7 +5656,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				toolSteps = append(toolSteps, ToolStep{
 					Kind:    ToolStepKindTool,
 					Name:    event.ToolName,
-					Summary: truncateIf(event.ToolInput, e.display.ToolMaxLen),
+					Summary: truncateIf(shownToolInput, e.display.ToolMaxLen),
 				})
 				if cardMessageID == nil {
 					card := buildResolvedRichCard(CardStatusWorking, "", toolSteps, partialText, true, e.composeRichStatusFooter(true, turnStart, e.agent, state.agentSession, state.workspaceDir))
@@ -5697,7 +5707,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			if e.display.ToolMessages {
 				// --- StreamingCard path ---
 				if streamCard != nil && !streamCard.Failed() {
-					toolInput := event.ToolInput
+					toolInput := shownToolInput
 					var formattedInput string
 					if toolInput == "" {
 						formattedInput = ""
@@ -5741,7 +5751,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if previewActive {
 					sp.detachPreview() // keep frozen preview visible as permanent message
 				}
-				toolInput := event.ToolInput
+				toolInput := shownToolInput
 				var formattedInput string
 				if toolInput == "" {
 					formattedInput = ""
@@ -5771,7 +5781,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			}
 
 		case EventToolResult:
-			if e.display.ToolMessages {
+			if e.display.ToolMessages && !e.display.HideToolDetails {
 				result := strings.TrimSpace(event.ToolResult)
 				if result == "" {
 					result = strings.TrimSpace(event.Content)
@@ -10615,12 +10625,20 @@ func (e *Engine) cmdQuiet(p Platform, msg *Message, args []string) {
 
 	e.display.Mode = newMode
 	switch newMode {
-	case "compact", "quiet":
+	case "compact":
+		// Compact shows what the agent is doing — its thinking and the names of
+		// the tools it calls — without the inputs and results behind them.
+		e.display.ThinkingMessages = true
+		e.display.ToolMessages = true
+		e.display.HideToolDetails = true
+	case "quiet":
 		e.display.ThinkingMessages = false
 		e.display.ToolMessages = false
+		e.display.HideToolDetails = true
 	default:
 		e.display.ThinkingMessages = true
 		e.display.ToolMessages = true
+		e.display.HideToolDetails = false
 	}
 
 	if e.displaySaveFunc != nil {

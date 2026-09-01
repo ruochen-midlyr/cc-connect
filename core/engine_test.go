@@ -5856,7 +5856,7 @@ func TestCmdQuiet_TogglesDisplay(t *testing.T) {
 	e.SetDisplayConfig(DisplayCfg{Mode: "full", ThinkingMessages: true, ToolMessages: true, ThinkingMaxLen: 300, ToolMaxLen: 500})
 	msg := &Message{SessionKey: "test:user1", ReplyCtx: "ctx"}
 
-	// 1st /quiet: full → quiet
+	// 1st /quiet: full → quiet (nothing but the answer)
 	e.cmdQuiet(p, msg, nil)
 	if e.display.Mode != "quiet" || e.display.ThinkingMessages || e.display.ToolMessages {
 		t.Fatalf("after 1st /quiet: Mode=%q, TM=%v, Tool=%v, want quiet/false/false",
@@ -5866,12 +5866,12 @@ func TestCmdQuiet_TogglesDisplay(t *testing.T) {
 		t.Fatalf("sent = %q, want quiet ON message", p.sent)
 	}
 
-	// 2nd /quiet: quiet → compact
+	// 2nd /quiet: quiet → compact (thinking and tool names, no payloads)
 	p.sent = nil
 	e.cmdQuiet(p, msg, nil)
-	if e.display.Mode != "compact" || e.display.ThinkingMessages || e.display.ToolMessages {
-		t.Fatalf("after 2nd /quiet: Mode=%q, TM=%v, Tool=%v, want compact/false/false",
-			e.display.Mode, e.display.ThinkingMessages, e.display.ToolMessages)
+	if e.display.Mode != "compact" || !e.display.ThinkingMessages || !e.display.ToolMessages || !e.display.HideToolDetails {
+		t.Fatalf("after 2nd /quiet: Mode=%q, TM=%v, Tool=%v, HideDetails=%v, want compact/true/true/true",
+			e.display.Mode, e.display.ThinkingMessages, e.display.ToolMessages, e.display.HideToolDetails)
 	}
 	if len(p.sent) != 1 || !strings.Contains(p.sent[0], "Compact mode") {
 		t.Fatalf("sent = %q, want compact mode message", p.sent)
@@ -5880,9 +5880,9 @@ func TestCmdQuiet_TogglesDisplay(t *testing.T) {
 	// 3rd /quiet: compact → full
 	p.sent = nil
 	e.cmdQuiet(p, msg, nil)
-	if e.display.Mode != "full" || !e.display.ThinkingMessages || !e.display.ToolMessages {
-		t.Fatalf("after 3rd /quiet: Mode=%q, TM=%v, Tool=%v, want full/true/true",
-			e.display.Mode, e.display.ThinkingMessages, e.display.ToolMessages)
+	if e.display.Mode != "full" || !e.display.ThinkingMessages || !e.display.ToolMessages || e.display.HideToolDetails {
+		t.Fatalf("after 3rd /quiet: Mode=%q, TM=%v, Tool=%v, HideDetails=%v, want full/true/true/false",
+			e.display.Mode, e.display.ThinkingMessages, e.display.ToolMessages, e.display.HideToolDetails)
 	}
 	if len(p.sent) != 1 || !strings.Contains(p.sent[0], "Quiet mode OFF") {
 		t.Fatalf("sent = %q, want quiet OFF message", p.sent)
@@ -16169,5 +16169,51 @@ func TestProcessInteractiveEvents_EmptyTurn_SendsNothing(t *testing.T) {
 	}
 	if strings.Contains(card.finalContent(), e.i18n.T(MsgEmptyResponse)) {
 		t.Fatalf("empty-response placeholder leaked into the card: %q", card.finalContent())
+	}
+}
+
+// TestProcessInteractiveEvents_CompactShowsToolNamesWithoutDetails locks in what
+// compact mode means: the reader can follow which tools the agent called without
+// the inputs and results that make a long turn unreadable. Compact used to hide
+// tool activity entirely, which left a turn that ends in a tool call looking like
+// the agent did nothing.
+func TestProcessInteractiveEvents_CompactShowsToolNamesWithoutDetails(t *testing.T) {
+	card := &recordingStreamCard{}
+	p := &recordingStreamCardPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "slack"},
+		card:               card,
+	}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	e.cmdQuiet(p, &Message{SessionKey: "slack:user-compact-tool-names", ReplyCtx: "ctx-compact-tool-names"}, []string{"compact"})
+
+	sessionKey := "slack:user-compact-tool-names"
+	session := e.sessions.GetOrCreateActive(sessionKey)
+	agentSession := newControllableSession("s-compact-tool-names")
+	state := &interactiveState{
+		agentSession: agentSession,
+		platform:     p,
+		replyCtx:     "ctx-compact-tool-names",
+	}
+	e.interactiveStates[sessionKey] = state
+
+	const secretInput = "rm -rf /very/long/payload/nobody/wants/to/read"
+	const secretResult = "deleted 4213 files"
+	agentSession.events <- Event{Type: EventToolUse, ToolName: "Bash", ToolInput: secretInput}
+	agentSession.events <- Event{Type: EventToolResult, ToolName: "Bash", ToolResult: secretResult}
+	agentSession.events <- Event{Type: EventToolUse, ToolName: "ScheduleWakeup", ToolInput: `{"delaySeconds":1200}`}
+	agentSession.events <- Event{Type: EventResult, Content: "done", Done: true}
+
+	e.processInteractiveEvents(state, session, e.sessions, sessionKey, "m-compact-tool-names", time.Now(), nil, nil, state.replyCtx)
+
+	got := card.finalContent()
+	for _, want := range []string{"Bash", "ScheduleWakeup", "done"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("compact card missing %q, got: %q", want, got)
+		}
+	}
+	for _, unwanted := range []string{secretInput, secretResult, "delaySeconds"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("compact card leaked tool detail %q, got: %q", unwanted, got)
+		}
 	}
 }

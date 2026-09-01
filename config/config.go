@@ -886,7 +886,7 @@ func projectQuietEffective(cfg *Config, proj *ProjectConfig) bool {
 //  1. project-level [projects.display].<field> (highest precedence)
 //  2. global [display].<field>
 //  3. mode-derived default (compact/quiet → false, full → true)
-func EffectiveDisplay(cfg *Config, proj *ProjectConfig) (mode string, thinkingMessages, toolMessages bool, thinkingMaxLen, toolMaxLen int, showContextIndicator, replyFooter, hideAgentFooter bool) {
+func EffectiveDisplay(cfg *Config, proj *ProjectConfig) (mode string, thinkingMessages, toolMessages bool, thinkingMaxLen, toolMaxLen int, showContextIndicator, replyFooter, hideAgentFooter, hideToolDetails bool) {
 	var projDisp *DisplayConfig
 	if proj != nil {
 		projDisp = proj.Display
@@ -902,11 +902,15 @@ func EffectiveDisplay(cfg *Config, proj *ProjectConfig) (mode string, thinkingMe
 		mode = DisplayModeQuiet
 	}
 
-	// Mode-derived defaults.
+	// Mode-derived defaults. Compact keeps thinking and tool names but drops the
+	// inputs and results behind them; quiet drops the progress display entirely.
 	thinkingDefault, toolDefault := true, true
 	switch mode {
-	case DisplayModeCompact, DisplayModeQuiet:
+	case DisplayModeCompact:
+		hideToolDetails = true
+	case DisplayModeQuiet:
 		thinkingDefault, toolDefault = false, false
+		hideToolDetails = true
 	}
 
 	pickBool := func(projVal, globalVal *bool, dflt bool) bool {

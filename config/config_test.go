@@ -212,12 +212,13 @@ func TestEffectiveDisplayQuiet(t *testing.T) {
 	compact := DisplayModeCompact
 	quiet := DisplayModeQuiet
 	tests := []struct {
-		name     string
-		cfg      Config
-		proj     ProjectConfig
-		wantMode string
-		wantTM   bool
-		wantTool bool
+		name            string
+		cfg             Config
+		proj            ProjectConfig
+		wantMode        string
+		wantTM          bool
+		wantTool        bool
+		wantHideDetails bool
 	}{
 		{
 			name:     "defaults no quiet",
@@ -228,20 +229,22 @@ func TestEffectiveDisplayQuiet(t *testing.T) {
 			wantTool: true,
 		},
 		{
-			name:     "global quiet maps to quiet mode",
-			cfg:      Config{Quiet: &tru},
-			proj:     ProjectConfig{},
-			wantMode: "quiet",
-			wantTM:   false,
-			wantTool: false,
+			name:            "global quiet maps to quiet mode",
+			cfg:             Config{Quiet: &tru},
+			proj:            ProjectConfig{},
+			wantMode:        "quiet",
+			wantTM:          false,
+			wantTool:        false,
+			wantHideDetails: true,
 		},
 		{
-			name:     "project quiet maps to quiet mode",
-			cfg:      Config{},
-			proj:     ProjectConfig{Quiet: &tru},
-			wantMode: "quiet",
-			wantTM:   false,
-			wantTool: false,
+			name:            "project quiet maps to quiet mode",
+			cfg:             Config{},
+			proj:            ProjectConfig{Quiet: &tru},
+			wantMode:        "quiet",
+			wantTM:          false,
+			wantTool:        false,
+			wantHideDetails: true,
 		},
 		{
 			name: "explicit thinking_messages wins over quiet",
@@ -249,10 +252,11 @@ func TestEffectiveDisplayQuiet(t *testing.T) {
 				Quiet:   &tru,
 				Display: DisplayConfig{ThinkingMessages: &tru},
 			},
-			proj:     ProjectConfig{},
-			wantMode: "quiet",
-			wantTM:   true,
-			wantTool: false,
+			proj:            ProjectConfig{},
+			wantMode:        "quiet",
+			wantTM:          true,
+			wantTool:        false,
+			wantHideDetails: true,
 		},
 		{
 			name:     "project quiet false overrides global quiet",
@@ -263,43 +267,47 @@ func TestEffectiveDisplayQuiet(t *testing.T) {
 			wantTool: true,
 		},
 		{
-			name:     "explicit mode compact",
-			cfg:      Config{Display: DisplayConfig{Mode: &compact}},
-			proj:     ProjectConfig{},
-			wantMode: "compact",
-			wantTM:   false,
-			wantTool: false,
+			name:            "explicit mode compact",
+			cfg:             Config{Display: DisplayConfig{Mode: &compact}},
+			proj:            ProjectConfig{},
+			wantMode:        "compact",
+			wantTM:          true,
+			wantTool:        true,
+			wantHideDetails: true,
 		},
 		{
-			name:     "project mode overrides global mode",
-			cfg:      Config{Display: DisplayConfig{Mode: &quiet}},
-			proj:     ProjectConfig{Display: &DisplayConfig{Mode: &compact}},
-			wantMode: "compact",
-			wantTM:   false,
-			wantTool: false,
+			name:            "project mode overrides global mode",
+			cfg:             Config{Display: DisplayConfig{Mode: &quiet}},
+			proj:            ProjectConfig{Display: &DisplayConfig{Mode: &compact}},
+			wantMode:        "compact",
+			wantTM:          true,
+			wantTool:        true,
+			wantHideDetails: true,
 		},
 		{
-			name:     "explicit mode wins over legacy quiet",
-			cfg:      Config{Quiet: &tru, Display: DisplayConfig{Mode: &compact}},
-			proj:     ProjectConfig{},
-			wantMode: "compact",
-			wantTM:   false,
-			wantTool: false,
+			name:            "explicit mode wins over legacy quiet",
+			cfg:             Config{Quiet: &tru, Display: DisplayConfig{Mode: &compact}},
+			proj:            ProjectConfig{},
+			wantMode:        "compact",
+			wantTM:          true,
+			wantTool:        true,
+			wantHideDetails: true,
 		},
 		{
 			name: "explicit mode quiet with thinking override",
 			cfg: Config{
 				Display: DisplayConfig{Mode: &quiet, ThinkingMessages: &tru},
 			},
-			proj:     ProjectConfig{},
-			wantMode: "quiet",
-			wantTM:   true,
-			wantTool: false,
+			proj:            ProjectConfig{},
+			wantMode:        "quiet",
+			wantTM:          true,
+			wantTool:        false,
+			wantHideDetails: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mode, tm, tool, _, _, _, _, _ := EffectiveDisplay(&tt.cfg, &tt.proj)
+			mode, tm, tool, _, _, _, _, _, hideDetails := EffectiveDisplay(&tt.cfg, &tt.proj)
 			if mode != tt.wantMode {
 				t.Fatalf("Mode = %q, want %q", mode, tt.wantMode)
 			}
@@ -308,6 +316,9 @@ func TestEffectiveDisplayQuiet(t *testing.T) {
 			}
 			if tool != tt.wantTool {
 				t.Fatalf("ToolMessages = %v, want %v", tool, tt.wantTool)
+			}
+			if hideDetails != tt.wantHideDetails {
+				t.Fatalf("HideToolDetails = %v, want %v", hideDetails, tt.wantHideDetails)
 			}
 		})
 	}
@@ -412,7 +423,7 @@ func TestEffectiveDisplay_ProjectOverride(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, tm, tool, thinkLen, toolMaxLen, _, _, _ := EffectiveDisplay(&tt.cfg, &tt.proj)
+			_, tm, tool, thinkLen, toolMaxLen, _, _, _, _ := EffectiveDisplay(&tt.cfg, &tt.proj)
 			if tm != tt.wantTM {
 				t.Errorf("ThinkingMessages = %v, want %v", tm, tt.wantTM)
 			}
@@ -513,7 +524,7 @@ func TestEffectiveDisplayHideAgentFooter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, _, _, _, _, _, got := EffectiveDisplay(&tt.cfg, &tt.proj)
+			_, _, _, _, _, _, _, got, _ := EffectiveDisplay(&tt.cfg, &tt.proj)
 			if got != tt.want {
 				t.Fatalf("hideAgentFooter = %v, want %v", got, tt.want)
 			}
