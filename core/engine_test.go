@@ -16090,3 +16090,49 @@ func TestProcessInteractiveEvents_StreamingCard_BareNoReply_Suppressed(t *testin
 		t.Fatalf("silent reply leaked NO_REPLY into the streaming card: %q", card.finalContent())
 	}
 }
+
+// TestProcessInteractiveEvents_StreamingCard_ToolEventDoesNotResendSegment is a
+// regression test for the duplicate-message bug: in compact mode (tool messages
+// hidden) the tool-event handler flushed the accumulated text segment as a plain
+// message, even though a streaming card was already rendering that exact text.
+// Every "text, then tool call" turn therefore posted the text twice — once in
+// the card, once as a standalone message.
+func TestProcessInteractiveEvents_StreamingCard_ToolEventDoesNotResendSegment(t *testing.T) {
+	card := &recordingStreamCard{}
+	p := &recordingStreamCardPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "slack"},
+		card:               card,
+	}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	e.SetDisplayConfig(DisplayCfg{Mode: "compact", ToolMessages: false})
+
+	sessionKey := "slack:user-streamcard-tool-resend"
+	session := e.sessions.GetOrCreateActive(sessionKey)
+	agentSession := newControllableSession("s-streamcard-tool-resend")
+	state := &interactiveState{
+		agentSession: agentSession,
+		platform:     p,
+		replyCtx:     "ctx-streamcard-tool-resend",
+	}
+	e.interactiveStates[sessionKey] = state
+
+	const progress = "Fair challenge. Let me look at that before answering."
+	agentSession.events <- Event{Type: EventText, Content: progress}
+	agentSession.events <- Event{Type: EventToolUse, ToolName: "Bash", ToolInput: "git log"}
+	agentSession.events <- Event{Type: EventText, Content: " Done."}
+	agentSession.events <- Event{Type: EventResult, Content: progress + " Done.", Done: true}
+
+	e.processInteractiveEvents(state, session, e.sessions, sessionKey, "m-streamcard-tool-resend", time.Now(), nil, nil, state.replyCtx)
+
+	for _, sent := range p.getSent() {
+		if strings.Contains(sent, progress) {
+			t.Fatalf("streaming card turn also posted the segment as a standalone message: %q\nall sends: %v", sent, p.getSent())
+		}
+	}
+	if !card.finalized() {
+		t.Fatalf("expected streaming card to be finalized")
+	}
+	if !strings.Contains(card.finalContent(), progress) {
+		t.Fatalf("card should carry the text, got %q", card.finalContent())
+	}
+}

@@ -5669,7 +5669,11 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			// When tool messages are hidden, behavior depends on display mode:
 			//   quiet:   append separator to keep all text in one card
 			//   compact: freeze+detach to split text into separate cards
-			if !e.display.ToolMessages && len(textParts) > segmentStart {
+			//
+			// The streaming card owns the whole turn's text, so this segment
+			// flush must not run alongside it: the text is already in the card
+			// and resending it posts a duplicate message.
+			if (streamCard == nil || streamCard.Failed()) && !e.display.ToolMessages && len(textParts) > segmentStart {
 				if e.display.Mode == "quiet" {
 					if sp.canPreview() && sp.appendSeparator("\n\n") {
 						textParts = append(textParts, "\n\n")
@@ -12431,7 +12435,6 @@ func (e *Engine) sendWithError(p Platform, replyCtx any, content string) error {
 }
 
 func (e *Engine) sendAlreadyRenderedWithError(p Platform, replyCtx any, content string) error {
-	logOutbound("send", p.Name(), content)
 	start := time.Now()
 	if err := p.Send(e.ctx, replyCtx, content); err != nil {
 		// Check for context_token missing error (common for Weixin platform)
@@ -12496,7 +12499,6 @@ func (e *Engine) replyWithError(p Platform, replyCtx any, content string) error 
 		slog.Warn("outgoing rate limit: context cancelled", "platform", p.Name(), "error", err)
 		return err
 	}
-	logOutbound("reply", p.Name(), content)
 	start := time.Now()
 	if err := p.Reply(e.ctx, replyCtx, content); err != nil {
 		slog.Error("platform reply failed", "platform", p.Name(), "error", err, "content_len", len(content))
