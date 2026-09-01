@@ -6100,9 +6100,10 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			} else if fullResponse == "" && len(textParts) > 0 {
 				fullResponse = strings.Join(textParts, "")
 			}
-			if fullResponse == "" {
-				fullResponse = e.i18n.T(MsgEmptyResponse)
-			}
+			// A turn that produced no text has nothing to deliver. Treat it like a
+			// silent reply instead of posting a placeholder the user has to read
+			// and then decide is not a prelude to anything.
+			emptyTurn := fullResponse == ""
 
 			// Strip any agent-self-reported "[ctx: ~XX%]" marker so it does not
 			// leak into the delivered text. The on-screen ctx indicator is now
@@ -6138,10 +6139,12 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			//   3. trailing marker with empty strip result   → fully silent
 			// History records the ORIGINAL baseResponse so the agent retains context of its own
 			// decision; only the outbound platform text gets rewritten/suppressed.
-			session.AddHistory("assistant", baseResponse)
-			sessions.Save()
+			if !emptyTurn {
+				session.AddHistory("assistant", baseResponse)
+				sessions.Save()
+			}
 
-			isSilent := isSilentReply(baseResponse)
+			isSilent := emptyTurn || isSilentReply(baseResponse)
 			if !isSilent {
 				if stripped, ok := stripTrailingSilent(baseResponse); ok {
 					if strings.TrimSpace(stripped) == "" {

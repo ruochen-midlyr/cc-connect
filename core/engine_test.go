@@ -16136,3 +16136,38 @@ func TestProcessInteractiveEvents_StreamingCard_ToolEventDoesNotResendSegment(t 
 		t.Fatalf("card should carry the text, got %q", card.finalContent())
 	}
 }
+
+// TestProcessInteractiveEvents_EmptyTurn_SendsNothing is a regression test for
+// the "(空响应)" placeholder: a turn that produced no text used to be rewritten
+// into a localized "(empty response)" string and delivered, so the user had to
+// read a message that carried no information and looked like it might be a
+// prelude to more. An empty turn must now be fully silent.
+func TestProcessInteractiveEvents_EmptyTurn_SendsNothing(t *testing.T) {
+	card := &recordingStreamCard{}
+	p := &recordingStreamCardPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "slack"},
+		card:               card,
+	}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangChinese)
+
+	sessionKey := "slack:user-empty-turn"
+	session := e.sessions.GetOrCreateActive(sessionKey)
+	agentSession := newControllableSession("s-empty-turn")
+	state := &interactiveState{
+		agentSession: agentSession,
+		platform:     p,
+		replyCtx:     "ctx-empty-turn",
+	}
+	e.interactiveStates[sessionKey] = state
+
+	agentSession.events <- Event{Type: EventResult, Content: "", Done: true}
+
+	e.processInteractiveEvents(state, session, e.sessions, sessionKey, "m-empty-turn", time.Now(), nil, nil, state.replyCtx)
+
+	if sent := p.getSent(); len(sent) != 0 {
+		t.Fatalf("empty turn should send nothing, got: %v", sent)
+	}
+	if strings.Contains(card.finalContent(), e.i18n.T(MsgEmptyResponse)) {
+		t.Fatalf("empty-response placeholder leaked into the card: %q", card.finalContent())
+	}
+}
