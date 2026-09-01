@@ -16217,3 +16217,47 @@ func TestProcessInteractiveEvents_CompactShowsToolNamesWithoutDetails(t *testing
 		}
 	}
 }
+
+// TestUnsolicitedReader_SuppressesSilentReply is a regression test for the
+// NO_REPLY marker reaching Slack verbatim. The foreground turn has always
+// suppressed a silent reply; the unsolicited reader relayed EventResult content
+// with no such check, so every loop tick that answered NO_REPLY posted the raw
+// marker as a message.
+func TestUnsolicitedReader_SuppressesSilentReply(t *testing.T) {
+	p := &stubPlatformEngine{n: "test"}
+	sess := newControllableSession("unsol-silent")
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	defer e.Stop()
+
+	sessions := e.sessions
+	iKey := "test:silent:u1"
+	session := sessions.GetOrCreateActive(iKey)
+	state := &interactiveState{agentSession: sess, platform: p, replyCtx: "ctx"}
+	e.interactiveMu.Lock()
+	e.interactiveStates[iKey] = state
+	e.interactiveMu.Unlock()
+
+	e.startUnsolicitedReader(state, session, sessions, iKey, "")
+	defer e.stopUnsolicitedReader(state)
+
+	sess.events <- Event{Type: EventResult, Content: "NO_REPLY", Done: true}
+	// A second, deliverable result proves the reader is still alive and that
+	// only the silent one was dropped.
+	sess.events <- Event{Type: EventResult, Content: "back with an answer", Done: true}
+
+	sent := waitForPlatformSend(p, 1, 5*time.Second)
+	for _, s := range sent {
+		if strings.Contains(s, "NO_REPLY") {
+			t.Fatalf("unsolicited reader posted the silent marker verbatim: %v", sent)
+		}
+	}
+	found := false
+	for _, s := range sent {
+		if strings.Contains(s, "back with an answer") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the deliverable result to still be relayed, got %v", sent)
+	}
+}

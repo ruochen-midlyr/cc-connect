@@ -5171,6 +5171,23 @@ func (e *Engine) runUnsolicitedReader(ctx context.Context, cancel context.Cancel
 					fullResponse = strings.Join(textParts, "")
 				}
 
+				// NO_REPLY handling mirrors the foreground turn: a bare marker is
+				// fully silent, a trailing marker is stripped and only the reasoning
+				// before it is delivered. Without this the marker reaches the platform
+				// verbatim. History still records the original text, so the agent keeps
+				// the context of its own decision.
+				deliverable := fullResponse
+				isSilent := isSilentReply(deliverable)
+				if !isSilent {
+					if stripped, ok := stripTrailingSilent(deliverable); ok {
+						if strings.TrimSpace(stripped) == "" {
+							isSilent = true
+						} else {
+							deliverable = stripped
+						}
+					}
+				}
+
 				// An agent that resumes a turn after signalling completion —
 				// Claude Code does this when a /goal stop hook fires — emits a
 				// second result carrying the text already delivered. Posting it
@@ -5185,8 +5202,10 @@ func (e *Engine) runUnsolicitedReader(ctx context.Context, cancel context.Cancel
 				if alreadyDelivered {
 					slog.Info("unsolicited result repeats the delivered response, not resending",
 						"session", sessionKey, "response_len", len(fullResponse))
-				} else if fullResponse != "" {
-					for _, chunk := range SplitMessageCodeFenceAware(fullResponse, maxPlatformMessageLen) {
+				} else if isSilent {
+					slog.Info("unsolicited silent reply suppressed", "session", sessionKey)
+				} else if deliverable != "" {
+					for _, chunk := range SplitMessageCodeFenceAware(deliverable, maxPlatformMessageLen) {
 						e.send(p, replyCtx, chunk)
 					}
 				}
